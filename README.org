@@ -1,0 +1,24 @@
+#+TITLE: Holo Fuel Python Modules
+#+STARTUP: org-startup-with-inline-images inlineimages
+#+OPTIONS: ^:nil # Disable sub/superscripting with bare _; _{...} still works
+#+LATEX_HEADER: \usepackage[margin=1.0in]{geometry}
+
+* Holo Fuel Python Modules
+
+  To support interaction with Holo Fuel from within Python, code the =holofuel= module is provided.
+
+  #+BEGIN_SRC python
+  >>> import holofuel as hf
+  >>> ... 
+  #+END_SRC
+
+* Holo Fuel Modelling
+
+  To support testing and modelling Holo Fuel system operations, several modules are provided.
+
+  #+BEGIN_SRC python
+  >>> import holofuel.model as hfmod
+  >>> control = hfmod.control.pid( ... )
+  >>> reserve = hfmod.trading.exchange( ... )
+  #+END_SRC
+

@@ -1,0 +1,10 @@
+*~
+.\#*
+\#*\#
+*.tex
+*.pyc
+data/
+.pytest_cache/
+holofuel.egg-info/
+build/
+dist/
