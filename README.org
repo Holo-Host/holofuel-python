@@ -18,7 +18,7 @@
 
   #+BEGIN_SRC python
   >>> import holofuel.model as hfmod
-  >>> control = hfmod.control.pid( ... )
+  >>> balance = hfmod.control.pid.controller( ... )
   >>> reserve = hfmod.trading.exchange( ... )
   #+END_SRC
 
