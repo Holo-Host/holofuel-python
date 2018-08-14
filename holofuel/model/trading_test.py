@@ -103,31 +103,47 @@ def test_market_simple():
 
     m.buy(  "agent I", 3, None, now=9. )
     m.sell( "agent J", 3, None, now=10. )
-    print( "Executing market-limit buy/sell (buyer wins):" )
+    print( "Executing market-limit buy/sell (buyer wins; gets best seller limit price):" )
     trades = list( m.execute( now=10. ))
     assert len( trades ) == 2
     for order in trades:
         print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
         if order.agent == "agent I" or order.agent == "agent J":
-            assert near( 3.99, order.price )
+            assert near( 4.01, order.price )
             assert near( 3, abs( order.amount ))
         else:
             assert False and "Invalid agent in trade: %s" % order.agent
 
     m.sell( "agent K", 3, None, now=11. )
     m.buy(  "agent L", 3, None, now=12. )
-    print( "Executing market-limit buy/sell (seller wins):" )
-    trades = list( m.execute( now=10. ))
+    print( "Executing market-limit buy/sell (seller wins; gets best buyer limit price):" )
+    trades = list( m.execute( now=12. ))
     assert len( trades ) == 2
     for order in trades:
         print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
         if order.agent == "agent K" or order.agent == "agent L":
-            assert near( 4.01, order.price )
+            assert near( 3.99, order.price )
             assert near( 3, abs( order.amount ))
         else:
             assert False and "Invalid agent in trade: %s" % order.agent
 
-
+    # Get rid of all limit price orders; will fall back to last trade price
+    m.close( "agent F" )
+    m.close( "agent D" )
+    m.close( "agent E" )
+    m.sell( "agent K", 3, None, now=13. )
+    m.buy(  "agent L", 3, None, now=14. )
+    print( "Executing market-limit buy/sell (no limit prices; uses last trade price):" )
+    trades = list( m.execute( now=14. ))
+    assert len( trades ) == 2
+    for order in trades:
+        print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
+        if order.agent == "agent K" or order.agent == "agent L":
+            assert near( 3.99, order.price )
+            assert near( 3, abs( order.amount ))
+        else:
+            assert False and "Invalid agent in trade: %s" % order.agent
+    
 
 def test_market_agent():
     m			= trading.market("grain")

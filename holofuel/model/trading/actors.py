@@ -2,6 +2,7 @@
 
 """
 trading		-- Market trading simulation framework
+  .agent        -- Minimal trading/exchange agent
   .actor	-- A basic actor in a stock market/exchange
 
 """
@@ -46,7 +47,55 @@ need = collections.namedtuple(
         ] )
 
 
-class actor( object ):
+class agent( object ):
+    """
+    A basic trading agent.  Simply records its trades, keeps track of its net assets.
+    """
+    def __init__( self, name=None, assets=None, now=None, **kwds ):
+        super( agent, self ).__init__( **kwds )
+        self.name		= name if name else hex(id(self))
+        self.trades		= []
+        self.assets		= {}   			# { 'something': 1000, 'another': 500 }
+        if assets:
+            self.assets.update( assets )
+        self.now		= now if now is not None else timer()
+        self.dt			= 0.			# The latest tick
+
+    def run( self, exch, now=None ):
+        """Compute the time quanta 'dt' since last execution, and update current 'now'."""
+        last			= self.now
+        self.now		= now if now is not None else timer()
+        self.dt			= self.now - last
+
+    def record( self, order, comment=None ):
+        """
+        Buy/sell the specified amount of security, at the given price.  If
+        amount is -'ve, then this is a sale.  Selling short, buying on margin is
+        allowed.
+        """
+        self.trades.append( order )
+        self.assets.setdefault(order.security, 0)
+        logging.info( "%-15s %-5s %6d %10s @ $%9.4f%s" % (
+                self.name, "sells" if order.amount < 0 else "buys",
+                abs( order.amount ), order.security, order.price,
+                ": " + comment if comment else ""))
+        self.assets[order.security] += order.amount
+
+    def volume( self, security=None, period=None, now=None ):
+        """Compute the total buy/sell volumes over the period (ending 'now', or self.now)."""
+        buy,sell		= 0,0
+        now			= now if now is not None else self.now
+        for order in reversed( self.trades ):
+            if period and order.time < now - period:
+                break
+            if security and order.security == security:
+                if order.amount < 0:
+                    sell       -= order.amount
+                else:
+                    buy	       += order.amount
+
+
+class actor( agent ):
     """
     Each actor produces and/or requires certain amounts of commodities
     (eg. food, goods, housing, labour) per time period.  The market should reach
@@ -78,40 +127,20 @@ class actor( object ):
     if other actors are in the market simultaneously with a corresponding
     sell/buy, then a trade may take place.
     """
-    def __init__( self, name=None, balance=0., assets=None, target=None,
-                  needs=None, minimum=0., now=None ):
-        self.name		= name if name else hex(id(self))
-        self.now		= now if now is not None else timer()
-        self.dt			= 0.			# The latest tick
-
-        self.trades		= []
+    def __init__( self, name=None, assets=None, target=None,
+                  needs=None, balance=0., minimum=0., now=None, **kwds ):
+        super( actor, self ).__init__( name=name, assets=assets, now=now, **kwds )
 
         # These are the target levels (if any) and assets holdings
         self.target		= {}			# { 'something': 350, ...}
         if target:
             self.target.update( target )
-        self.assets		= {}   			# { 'something': 1000, 'another': 500 }
-        if assets:
-            self.assets.update( assets )
-
         self.needs		= needs			# [ need(...), ... ]
-
         self.balance		= balance		# Credit balance
         self.minimum		= minimum		#  and target minimum
 
     def record( self, order, comment=None ):
-        """
-        Buy/sell the specified amount of security, at the given price.  If
-        amount is -'ve, then this is a sale.  Selling short, buying on margin is
-        allowed.
-        """
-        self.trades.append( order )
-        self.assets.setdefault(order.security, 0)
-        logging.info( "%s %5s %6d %10s @ $%7.2f%s" % (
-                self.name, "sells" if order.amount < 0 else "buys",
-                abs( order.amount ), order.security, order.price,
-                ": " + comment if comment else ""))
-        self.assets[order.security] += order.amount
+        super( actor, self ).record( order=order, comment=comment )
         self.balance	       -= order.amount * order.price
 
     def run( self, exch, now=None ):
@@ -131,9 +160,7 @@ class actor( object ):
         The basic actor tries to acquire things earlier, at a price below the
         current market rate, if possible.
         """
-        last			= self.now
-        self.now		= now if now is not None else timer()
-        self.dt			= self.now - last
+        super( actor, self ).run( exch=exch, now=now )
 
         self.acquire_needs( exch )
         self.cover_balance( exch )
@@ -183,7 +210,8 @@ class actor( object ):
                 # current market asking price (greatest of bid, ask and latest).
                 proportion	= 1. - ( n.deadline - self.now ) / n.cycle
                 factor		= scale( proportion, (0., 1.), (0.90, 1.05))
-                price		= max( 0 if p is None else p for p in exch.price( n.security ))
+                price_tuple	= exch.price( n.security ) # bid,ask,last
+                price		= max( 0 if p is None else p.price for p in price_tuple )
                 if price is None or near( 0, price ):
                     # No market yet!  Offer 1 cent per unit.
                     offer	= 0.01
@@ -228,7 +256,8 @@ class actor( object ):
         for sec, bal in self.assets.items():
             if exclude and sec in exclude:
                 continue
-            price		= max( 0 if p is None else p for p in exch.price( sec ))
+            price_tuple		= exch.price( sec )
+            price		= max( 0 if p is None else p.price for p in price_tuple )
             if price is None:
                 continue
             # There is bidding on this security.  Compute the value of
@@ -301,7 +330,8 @@ class actor( object ):
         reference 		= 0.
         for sec, bas in bases.items():
             reference 	       += bas
-            price 		= max( 0 if p is None else p for p in exch.price( sec ))
+            price_tuple		= exch.price( sec ) # bid,ask,last
+            price		= max( 0 if p is None else p.price for p in price_tuple )
             print( "Inflation: %s @%r" % ( sec, price ))
             total 	       += price
         inflation 		= total / reference
@@ -338,15 +368,16 @@ class actor( object ):
 
 class producer( actor ):
     def __init__( self, security, cycle, output,
-                  now=None, name=None, balance=0., assets=None ):
-        actor.__init__( self, now=now, name=name, balance=balance, assets=assets )
+                  now=None, name=None, balance=0., assets=None, **kwds ):
+        actor.__init__( self, now=now, name=name, balance=balance, assets=assets, **kwds )
+
         self.crop		= crop
         self.cycle		= cycle
         self.output		= output
 
         self.harvested		= self.now
 
-    def run( self, curr, exch, now=None ):
+    def run( self, exch, now=None ):
         """
         Produce a certain commodity on a certain cycle, with a certain range of
         output.  Performs all the tasks of a base actor, plus produces
@@ -354,7 +385,7 @@ class producer( actor ):
 
         If he has excess cash, he might expand production.
         """
-        super( producer, self ).run( currency, market, now=now )
+        super( producer, self ).run( exch=exch, now=now )
         
         while self.now >= self.harvested + self.cycle:
             self.harvested     += self.cycle

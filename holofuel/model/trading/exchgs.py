@@ -97,12 +97,13 @@ class market( object ):
 
     Market-price orders are always processed before fixed-price orders.
     """
-    def __init__( self, name, now=None):
+    def __init__( self, name, now=None, **kwds ):
+        super( market, self ).__init__( **kwds )
         self.name 		= name
         self.now 		= now if now is not None else timer()
         self.buying 		= []
         self.selling 		= []
-        self.lastprice		= 0.
+        self.last		= None
         self.transaction	= 0
 
     def __repr__( self ):
@@ -111,14 +112,13 @@ class market( object ):
                     order.agent.name, order.amount, order.security, order.price )
                 for order in self.buying + self.selling])
 
-    def open( self, agent ):
+    def open( self, agent=None ):
+        """Yield all currently open trades by this agent; buys will have a +'ve amount, sells a -'ve amount.
+
         """
-        Return all currently open trades by this agent.  All trades are returned as a single list;
-        buys will have a +'ve amount, sells a -'ve amount.
-        """
-        return [ order
-                 for order in self.buying + self.selling
-                 if order.agent is agent ]
+        for order in itertools.chain( self.buying, self.selling ):
+            if agent is None or order.agent is agent:
+                yield order
 
     def close( self, agent ):
         """
@@ -130,12 +130,12 @@ class market( object ):
     def buy( self, agent, amount, price=None, now=None, update=True ):
         if now is None:
             now 		= timer()
-        self.enter( trade(self.name, price, now, amount, agent ), update=update)
+        self.enter( trade(self.name, price, now, amount, agent ), update=update )
 
     def sell( self, agent, amount, price=None, now=None, update=True ):
         if now is None:
             now 		= timer()
-        self.enter( trade(self.name, price, now, -amount, agent ), update=update)
+        self.enter( trade(self.name, price, now, -amount, agent ), update=update )
 
     def enter( self, order, update=True ):
         """
@@ -156,24 +156,30 @@ class market( object ):
             self.selling.sort( key=sell_book_key )
 
     def price( self ):
+        """Return the current market price spread; bid, ask and last orders.  Ignores market-price
+        (NaN/None) bids/asks.  Remember that the sell (ask) will have -'ve amounts!
+
         """
-        Return the current market price spread; bid, ask and last.  Ignores market-price (one) bids.
-        """
-        bid			= 0.
+        bid			= None
         for order in reversed( self.buying ):
             if not non_value( order.price ):
-                bid		= order.price
+                bid		= order
                 break
-        ask			= 0.
+        ask			= None
         for order in self.selling:
             if not non_value( order.price ):
-                ask		= order.price
+                ask		= order
                 break
-        return prices( bid, ask, self.lastprice )
+        return prices( bid, ask, self.last )
+
+    def execute_all( self, now=None, record=True ):
+        """Execute all trades; If appropriate (record is True), we will also execute the order.agent.record( order )."""
+        for order in self.execute( now=now ):
+            if record:
+                order.agent.record( order )
 
     def execute( self, now=None ):
-        """
-        Yield all possible trading transactions, adjust books.  Not thread-safe.  Performs
+        """Yield all possible trading transactions, adjust books.  Not thread-safe.  Performs
         market-price orders first, sorted by age.  Then, limit-price orders.  Remember that all
         amounts in the selling book are -'ve!
         
@@ -187,51 +193,62 @@ class market( object ):
 
         Largely ported from fms/fms/markets/continuousorderdriven.py, with handling for market-price
         and limit-price bid/ask added.
+
+        Market sell (ask) prices are defined by the highest available buy (bid) price, and market
+        buy (bid) prices are defined by the lowest available sell (ask) price.  If none are
+        available, then the last order price is used.  It doesn't make sense to use bid prices if
+        there are no price limit asks in the market, as this would allow a buyer to set his own
+        price in a thin market.
+
         """
         if now is None:
             now			= timer()
         while ( self.buying and self.selling 
-                and ( non_value( self.selling[0].price )
+                and ( non_value( self.selling[0].price )			# either are market trades
                       or non_value( self.buying[-1].price )
-                      or self.selling[0].price <= self.buying[-1].price )):
+                      or self.selling[0].price <= self.buying[-1].price )):	# or, limit prices overlap
             # Trades available, and lowest seller at or below greatest buyer (or one or both is None
-            # or NaN, meaning market price).  If both buyer and seller are trading with market-price orders,
-            # then the oldest order gets the advantage; buyers
-            # If no limit-price orders exist, then no trade can be made (there is no market).
+            # or NaN, meaning market price).  If both buyer and seller are trading with market-price
+            # orders, then the oldest order gets the advantage; market buyers pay highest available
+            # seller limit, market sellers get lowest available buyer limit.  If no limit-price
+            # orders exist, then no trade can be made on current prices(there is no market); use the
+            # last order traded, if any.
             amount 		= min( self.buying[-1].amount, -self.selling[0].amount )
 
             if self.buying[-1].time < self.selling[0].time:
-                # Buyer place trade before seller; buyer gets better price
+                # Buyer placed trade before seller; buyer gets better price (seller's ask limit price)
                 price 		= self.selling[0].price
                 if non_value( price ):
-                    # Except if it's a market-price bid; then buyer pays seller's bid price.  If
-                    # both are market price, the buyer will get the priority; the best limit-price
-                    # bid, or the best ask
+                    # Except if it's a market-price ask; then buyer pays his own bid limit price.
+                    # If both are market price, the buyer will still get the priority; the best sell
+                    # (ask) limit price.
                     price	= self.buying[-1].price
-                    search	= itertools.chain( reversed( self.buying ), self.selling )
+                    search	= self.selling
             else:
-                # Seller placed trade at/after buyer; seller gets better price
+                # Seller placed trade at/after buyer; seller gets better price (buyer's bid limit price)
                 price 		= self.buying[-1].price
                 if non_value( price ):
-                    # Except if it's a market-price ask; then seller pays buyer's bid price
+                    # Except if it's a market-price bid; then seller pays his own ask price.  If both are market,
+                    # then seller still gets priority; he'll get the best available buy (bid) limit price.
                     price	= self.selling[0].price
-                    search	= itertools.chain( self.selling, reversed( self.buying ) )
+                    search	= reversed( self.buying )
             if non_value( price ):
                 # Both are market-price orders; search order gives advantage to the oldest trade
                 for order in search:
                     if not non_value( order.price ):
-                        price = order.price
+                        price	= order.price
                         break
             if non_value( price ):
-                # Price is *still* None/NaN: No market exists; cannot trade.
-                break
+                # Price is *still* None/NaN: No current market exists; use last trade
+                if self.last is None:
+                    break
+                price		= self.last.price
 
             logging.info( "market %s at %7.2f" % ( self.name, price ))
-            self.lastprice 	= price
             self.transaction   += 1
+            buy = self.last 	= trade( self.name, price, now,  amount, self.buying[-1].agent )
+            sell		= trade( self.name, price, now, -amount, self.selling[0].agent )
 
-            buyer 		= self.buying[-1].agent
-            seller 		= self.selling[0].agent
             if amount == self.buying[-1].amount:
                 del self.buying[-1]
             else:
@@ -244,9 +261,8 @@ class market( object ):
                 self.selling[0] = trade( self.selling[0].security, self.selling[0].price,
                                          self.selling[0].time, self.selling[0].amount + amount,
                                          self.selling[0].agent )
-
-            yield trade(self.name, price, now,  amount, buyer) 
-            yield trade(self.name, price, now, -amount, seller)
+            yield buy
+            yield sell
 
 
 class exchange( object ):
@@ -256,7 +272,8 @@ class exchange( object ):
 
     Much the same as a market, but most methods require a security name.
     """
-    def __init__( self, name ):
+    def __init__( self, name, **kwds ):
+        super( exchange, self ).__init__( **kwds )
         self.name	        = name
         self.markets		= {}
 
