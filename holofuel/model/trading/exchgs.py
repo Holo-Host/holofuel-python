@@ -68,8 +68,8 @@ def buy_book_key( order ):
 
 
 class market( object ):
-    """
-    Implements a market for the named security.  Attempts to solve the set of trades available for
+    """Implements a market for the named security.  Uses the "Security/Currency" naming convention or
+    'currency' keyword; default is 'USD'.  Attempts to solve the set of trades available for
     completion at the given moment.  The market supports fixed-price (>= $0.00) and market-price
     (None or NaN) bids.
 
@@ -96,10 +96,12 @@ class market( object ):
          50/200 @ $4.01 from <agent D>
 
     Market-price orders are always processed before fixed-price orders.
+
     """
-    def __init__( self, name, now=None, **kwds ):
+    def __init__( self, name, currency=None, now=None, **kwds ):
         super( market, self ).__init__( **kwds )
         self.name 		= name
+        self.currency		= currency or ( name.split('/',1)[1] if '/' in name else 'USD' )
         self.now 		= now if now is not None else timer()
         self.buying 		= []
         self.selling 		= []
