@@ -21,10 +21,21 @@ __email__                       = "perry.kundert@holo.host"
 __copyright__                   = "Copyright (c) 2018 Perry Kundert"
 __license__                     = "GPLv3+"
 
-__all__                         = ["model"]
+import logging
 
-# Make the classes, etc. within the major components visible
-from .exchgs import *
-from .actors import *
-from .engine import *
-from .worlds import *
+class engine( object ):
+    """The basic engine runs everything according to the world's time defined periods."""
+    def __init__( self, world=None, exch=None, agents=None, **kwds ):
+        super( engine, self ).__init__( **kwds )
+        self.world		= world
+        self.exchange		= exch
+        self.agents		= agents
+
+    def run( self ):
+        """ Give every agent a chance to do something on every time quanta, and then let
+        the exchange solve for matching trades placed during that quanta."""
+        for now in self.world.periods():
+            for agent in self.agents:
+                agent.run( exch=self.exchange, now=now )
+            self.exchange.execute_all( now=now )
+        

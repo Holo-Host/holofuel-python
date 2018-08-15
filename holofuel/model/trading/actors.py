@@ -66,9 +66,6 @@ class agent( object ):
     def __str__( self ):
         return self.identity
 
-    def __repr__( self ):
-        return '<' + self.identity + '>'
-
     @property
     def balance( self ):
         """self.balance -- access/adjust balance in preferred currency (in .assets).  Will remain None 'til
@@ -82,7 +79,7 @@ class agent( object ):
             "No agent currency defined/deduced; cannot change balance"
         if self.balance: # Currency balance not None/0:
             logging.warning( "{:<20s} balance adjusted from {}${:9.4f} to {:9.4f}".format(
-                self, self.currency, self.balance, value ))
+                str( self ), self.currency, self.balance, value ))
         self.assets[self.currency] = value
 
     def run( self, exch, now=None ):
@@ -100,7 +97,7 @@ class agent( object ):
         self.trades.append( order )
         if self.currency is None:
             self.currency	= order.currency
-        logging.info( "%-15s %-5s %6d %10s @ %3s$%9.4f%s" % (
+        logging.info( "%-20s %-5s %6d %10s @ %3s$%9.4f%s" % (
                 self, "sells" if order.amount < 0 else "buys",
                 abs( order.amount ), order.security, order.currency, order.price,
                 ": " + comment if comment else ""))
