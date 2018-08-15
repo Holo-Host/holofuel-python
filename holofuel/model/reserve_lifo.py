@@ -183,8 +183,11 @@ class reserve( trading.market, trading.agent ):
     price information that could be useful for automation.
 
     """
-    def __init__( self, reserves=None, **kwds ):
-        super( reserve, self ).__init__( **kwds )
+    def __init__( self, name, identity=None, reserves=None, **kwds ):
+        assert name, "A Reserve name (eg. 'Security/Currency') must be provided"
+        if not identity: # The Reserve's Market Maker agent
+            identity		= '{} Reserve'.format( name ) # Eg. HoloFuel/USD Reserve
+        super( reserve, self ).__init__( name=name, identity=identity, **kwds )
         self.reserves	= dict( reserves ) if reserves else {} # { <price>: <amount>, ... }
         self.run( now=self.now )
 
@@ -212,16 +215,12 @@ class reserve( trading.market, trading.agent ):
         self.reserves.setdefault( order.price, 0 )
         self.reserves[order.price] += order.amount
         if self.reserves[order.price] == 0:
-            logging.info( "{:<15} emptied Reserve tranche @ ${:9.4f}".format( order.agent, order.price ))
+            logging.info( "{:<20} emptied Reserve tranche @ ${:9.4f}".format( str( order.agent ), order.price ))
             self.reserves.pop( order.price )
 
     def print_full_book( self, width=40 ):
         """Print buy/sell order book w/ incl. depth chart."""
-        biggest		= max( abs( order.amount ) for order in self.open() )
-        for order in self.open():
-            print( "{:<15} {:12} {:9d} @ {:7.4f} {}".format( order.agent,
-                "buy (Issue)" if order.amount > 0 else "sell (Retire)", abs( order.amount ),
-                order.price, '*' * ( width * abs( order.amount ) // biggest )))
+        print( self.format_book( width=width ))
         
 
 class reserve_issuing( reserve ):
@@ -248,7 +247,6 @@ class reserve_issuing( reserve ):
         self.supply_factor	= 1       if supply_factor  is None else supply_factor	# 1.0
         self.supply_premium	= 1       if supply_premium is None else supply_premium	# supply price vs. 
         super( reserve, self ).__init__( **kwds )
-
     
     @property
     def supply_premium( self ):

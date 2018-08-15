@@ -14,8 +14,10 @@
 # You should have received a copy of the GNU General Public License
 # along with Holo Fuel.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import absolute_import, print_function, division
+
 __author__                      = "Perry Kundert"
-__email__                       = "perry@kundert.ca"
+__email__                       = "perry.kundert@holo.host"
 __copyright__                   = "Copyright (c) 2018 Perry Kundert"
 __license__                     = "GPLv3+"
 

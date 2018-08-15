@@ -11,7 +11,7 @@ def test_reserve_simple():
     assert near( ask.price, .0007 )
 
     # Buy (Reture) the available reserves, emptying the tranche
-    a1				= trading.agent( name="A1" )
+    a1				= trading.agent( "A1" )
     HoloFuel_USD.buy( a1, 100, .0007 )
     HoloFuel_USD.execute_all()
     bid,ask,last		= HoloFuel_USD.price()

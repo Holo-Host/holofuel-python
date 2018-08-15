@@ -5,7 +5,7 @@ from . import trading, near
 
 
 def test_market_simple():
-    m			= trading.market("grain")
+    m			= trading.market( "grain" )
     m.sell( "agent A", 250, 4.00, now=1. )
     m.buy(  "agent B", 500, 4.10, now=2. )
     m.sell( "agent C", 200, 4.00, now=2. )
@@ -146,9 +146,9 @@ def test_market_simple():
     
 
 def test_market_agent():
-    m			= trading.market("grain")
-    a			= trading.actor( now=0., balance=1000. )
-    b			= trading.actor( now=0., assets={"grain":100} )
+    m			= trading.market( "grain" )
+    a			= trading.actor( now=0., currency=m.currency, balance=1000. )
+    b			= trading.actor( now=0., currency=m.currency, assets={"grain":100} )
 
     # An earlier (or simultaneous) seller sets the price
     m.sell( b, 100, 10., now=1.)
@@ -162,8 +162,8 @@ def test_market_agent():
     assert 10 == b.assets["grain"]
     assert 90 == a.assets["grain"]
 
-    m			= trading.market("grain")
-    a			= trading.actor( now=0., balance=1000. )
+    m			= trading.market( "grain" )
+    a			= trading.actor( now=0., currency=m.currency, balance=1000. )
     b			= trading.actor( now=0., assets={"grain":100} )
 
     # An earlier buyer sets the price
@@ -186,18 +186,18 @@ def test_exchange():
     GSE			= trading.exchange( "GSE" )
     actors		= []
     needs		= []
-    needs.append( trading.need( priority=1, deadline=3.,
-                               security="alloy", cycle=3, amount=4 ))
-    needs.append( trading.need( priority=1, deadline=5.,
-                               security="energy", cycle=7, amount=2 ))
-    needs.append( trading.need( priority=1, deadline=7.,
-                               security="arrays", cycle=11, amount=1 ))
+    needs.append( trading.need_t( priority=1, deadline=3.,
+                                  security="alloy", cycle=3, amount=4 ))
+    needs.append( trading.need_t( priority=1, deadline=5.,
+                                  security="energy", cycle=7, amount=2 ))
+    needs.append( trading.need_t( priority=1, deadline=7.,
+                                  security="arrays", cycle=11, amount=1 ))
                   
-    actors.append( trading.actor( balance=1000., needs=needs,
+    actors.append( trading.actor( currency=GSE.currency, balance=1000., needs=needs,
                                   assets={"alloy":    1000}, now=0 ))
-    actors.append( trading.actor( balance=1000., needs=needs,
+    actors.append( trading.actor( currency=GSE.currency, balance=1000., needs=needs,
                                   assets={"energy":   1000}, now=0 ))
-    actors.append( trading.actor( balance=1000., needs=needs,
+    actors.append( trading.actor( currency=GSE.currency, balance=1000., needs=needs,
                                   assets={"arrays":   1000}, now=0 ))
 
     for t in range(0,30):
