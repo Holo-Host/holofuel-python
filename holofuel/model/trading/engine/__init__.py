@@ -38,4 +38,3 @@ class engine( object ):
             for agent in self.agents:
                 agent.run( exch=self.exchange, now=now )
             self.exchange.execute_all( now=now )
-        

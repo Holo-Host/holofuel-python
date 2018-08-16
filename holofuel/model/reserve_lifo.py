@@ -198,24 +198,26 @@ class reserve( trading.market, trading.agent ):
         self.run()
 
     def run( self, exch=None, now=None ):
-        """Evaluates reserves, and places sell orders for each tranche at its original buy price.  Then
-        computes the appropriate price range and amounts for sells, and enters the available tranches.
+        """Evaluates Currency reserves, and places buy orders (so other agents can sell, Retiring Holo fuel
+        for USD$) for each tranche at its original Holo fuel / USD$ price.
 
+        All outstanding orders are closed to begin; only buy orders will exist for this agent at return.
         """
         assert exch is None, \
             "A reserve is both a trading.market and an agent; no market need be supplied "
         super( reserve, self ).run( exch=self, now=now )
         self.close( self )
         for price,amount in self.reserves.items():
-            self.sell( self, amount=amount, price=price, now=now )
+            self.buy( self, amount=amount, price=price, now=now )
 
     def record( self, order, comment=None ):
         """Adjust reserves by the amount bought/sold, retiring tranches as they are exhausted."""
         super( reserve, self ).record( order=order, comment=comment )
         self.reserves.setdefault( order.price, 0 )
-        self.reserves[order.price] += order.amount
+        self.reserves[order.price] -= order.amount
         if self.reserves[order.price] == 0:
-            logging.info( "{:<20} emptied Reserve tranche @ ${:9.4f}".format( str( order.agent ), order.price ))
+            logging.info( "{:<20} emptied Reserve tranche @ {}${:9.4f}".format(
+                str( order.agent ), order.currency, order.price ))
             self.reserves.pop( order.price )
 
     def print_full_book( self, width=40 ):
@@ -241,19 +243,24 @@ class reserve_issuing( reserve ):
     buy/sell ratio.
 
     """
-    def __init__( self, supply_factor=None, supply_premium=None, supply_amount=1000000, supply_period=None ):
-        self.supply_period	= 60 * 60 if supply_period  is None else supply_period	# 1hr
-        self.supply_ratio	= 1       if supply_ratio   is None else supply_ratio	# 1/1 (neutral Issue/Retire)
-        self.supply_factor	= 1       if supply_factor  is None else supply_factor	# 1.0
-        self.supply_premium	= 1       if supply_premium is None else supply_premium	# supply price vs. 
-        super( reserve, self ).__init__( **kwds )
+    def __init__( self, supply_available=None, supply_factor=None, supply_premium=None, supply_amount=1000000,
+                  supply_period=None, supply_ratio=None, supply_book_value=None, **kwds ):
+        self.supply_book_value	= 1.0     if supply_book_value	is None else supply_book_value	# Initial supply book value
+        self.supply_period	= 60 * 60 if supply_period	is None else supply_period	# 1hr
+        self.supply_ratio	= 1       if supply_ratio	is None else supply_ratio	# 1/1 (neutral Issue/Retire)
+        self.supply_factor	= 1       if supply_factor	is None else supply_factor	# 1.0
+        self.supply_premium	= 1       if supply_premium	is None else supply_premium	# supply price vs. 
+        assert supply_available is not None, \
+            "Must provide a supply_available per {}hr period".format( self.supply_period // ( 60 * 60 ))
+        self.supply_available	= supply_available
+        super( reserve_issuing, self ).__init__( **kwds )
     
     @property
     def supply_premium( self ):
         """The supply_premium may be computed, eg. by a PID loop, to equalize flows between markets."""
         return self._supply_premium
     @supply_premium.setter
-    def supply_premium( value ):
+    def supply_premium( self, value ):
         self._supply_premium	= value
 
     @property
@@ -270,7 +277,7 @@ class reserve_issuing( reserve ):
         available in a sequence of asks.  Our goal is to seek the current equilibrium price,
         starting from the most recent trades.  
 
-        The simplest embodiment just asks a sequence of prices; the last trade's price indicates the
+        A possible embodiment just asks a sequence of prices; the last trade's price indicates the
         maximum market price. Of course, the cost is the sale/Issue of Holo Fuel at unnecessarily
         low prices. 
 
@@ -278,10 +285,16 @@ class reserve_issuing( reserve ):
         time, and an exponential decreasing function defining what is available at each price point.
         As we lose coherence (time since last buy), we'll spread that function out (wider range of
         prices, but larger amounts are further away from the target price).
+        
+        The simplest embodiment just issues everything at one price (the book value * premium), and
+        tries to issue supply_amount per supply_period.  It looks at the amount sold over the
+        trailing period, and adjust the amount available to the remaining amount.  Then, it enters
+        sell orders (so other agents can buy, Issuing Holo fuel for USD$).
+
         """
-        super( reserve_issuing, self ).run( exch=exch, now=now )
+        super( reserve_issuing, self ).run( exch=exch, now=now ) # closes all open orders, issues buys
         buy,sell		= self.volume( period=self.supply_period, now=now )
-        bid,ask,last		= self.price()
-        if last is None:
-            supply_price	= 0
-        # TODO ...
+        supply_sold_period	= sell - buy
+        supply_price		= self.supply_book_value * self.supply_premium
+        if supply_sold_period < self.supply_available:
+            self.sell( agent=self, amount=self.supply_available - supply_sold_period, price=supply_price )

@@ -112,12 +112,13 @@ class market( object ):
 
     def format_book( self, width=40 ):
         """Print buy/sell order book w/ incl. depth chart."""
-        biggest		= max( abs( order.amount ) for order in self.open() )
+        open		= list( self.open() )
+        biggest		= max( [ order.amount for order in open ] if open else [0] ) # python2 compatibility for python3 max( ..., default=0 )
         return '\n'.join(
             "{:<20s} {:4} {:9d} @ {}${:7.4f} {}".format( str( order.agent ),
                 "buy" if order.amount > 0 else "sell", abs( order.amount ),
                 order.currency, order.price, '*' * ( width * abs( order.amount ) // biggest if biggest else 0 ))
-            for order in self.open() )
+            for order in open )
 
     def __repr__( self ):
         """A market's representation is its full order book."""
