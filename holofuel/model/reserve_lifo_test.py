@@ -13,7 +13,8 @@ def test_reserve_simple():
     # Agent A2 sells (Retires) Holo Fuel equal to the available reserves, emptying the tranche
     a1				= trading.agent( "A1" )
     HoloFuel_USD.sell( a1, 100, .0007 )
-    print( "assets: {!r}".format( HoloFuel_USD.assets ))
+    print( "assets:   {!r}".format( HoloFuel_USD.assets ))
+    print( "reserves: {!r}".format( HoloFuel_USD.reserves ))
     print( "{!r}".format( HoloFuel_USD ))
     HoloFuel_USD.execute_all()
     print( "assets: {!r}".format( HoloFuel_USD.assets ))
@@ -26,17 +27,27 @@ def test_reserve_simple():
     # redeem Holo fuel later.
     HoloFuel_USD.buy( a1, 1000, .001 )
     HoloFuel_USD.execute_all()
-    print( "assets: {!r}".format( HoloFuel_USD.assets ))
+    print( "assets:   {!r}".format( HoloFuel_USD.assets ))
+    print( "reserves: {!r}".format( HoloFuel_USD.reserves ))
     print( "{!r}".format( HoloFuel_USD ))
     bid,ask,last		= HoloFuel_USD.price()
     assert near( bid.price, .001 )
 
 def test_reserve_issuing():
     logging.getLogger().setLevel( logging.INFO )
-    HoloFuel_USD		= reserve_issuing( name="HoloFuel/USD", reserves={ .0007: 100 },
+    HoloFuel_USD		= reserve_issuing( name="HoloFuel/USD",
                                         supply_book_value=1.0, supply_period=60*60, supply_available=1000000 )
-    print( "assets: {!r}".format( HoloFuel_USD.assets ))
-    print( "orders: {!r}".format( HoloFuel_USD ))
+    print( "assets:   {!r}".format( HoloFuel_USD.assets ))
+    print( "reserves: {!r}".format( HoloFuel_USD.reserves ))
+    print( "{!r}".format( HoloFuel_USD ))
 
+    '''
+    stipend			= 1000
+    agent_count			= 100
+    need			= need_t( 1, 
+    agents			= [ trading.actor( "A{}".format( n ), currency=Holofuel_USD.currency, balance=stipend
+                                                   need)
+                                    for n in range( agent_count ) ]
+    '''
     
     
