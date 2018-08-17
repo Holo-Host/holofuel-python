@@ -24,6 +24,7 @@ __license__                     = "GPLv3+"
 __all__                         = ["model"]
 
 # Make the classes, etc. within the major components visible
+from .consts import *
 from .exchgs import *
 from .actors import *
 from .engine import *

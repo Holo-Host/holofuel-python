@@ -243,7 +243,7 @@ class reserve_issuing( reserve ):
     buy/sell ratio.
 
     """
-    def __init__( self, supply_available=None, supply_factor=None, supply_premium=None, supply_amount=1000000,
+    def __init__( self, name, supply_available=None, supply_factor=None, supply_premium=None, supply_amount=1000000,
                   supply_period=None, supply_ratio=None, supply_book_value=None, **kwds ):
         self.supply_book_value	= 1.0     if supply_book_value	is None else supply_book_value	# Initial supply book value
         self.supply_period	= 60 * 60 if supply_period	is None else supply_period	# 1hr
@@ -253,7 +253,7 @@ class reserve_issuing( reserve ):
         assert supply_available is not None, \
             "Must provide a supply_available per {}hr period".format( self.supply_period // ( 60 * 60 ))
         self.supply_available	= supply_available
-        super( reserve_issuing, self ).__init__( **kwds )
+        super( reserve_issuing, self ).__init__( name, **kwds )
     
     @property
     def supply_premium( self ):

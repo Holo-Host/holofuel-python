@@ -32,10 +32,12 @@ __license__                     = "GPLv3+"
 import collections
 import logging
 import math
+import random
 
 from .. import timer, scale, near
 
-from .exchgs import *
+from .exchgs import * # market, ...
+from .consts import * # day, ...
 
 need_t				= collections.namedtuple( 
     'Need', [
@@ -51,42 +53,56 @@ class agent( object ):
     """A basic trading agent.  Simply records its trades, keeps track of its net assets.  Has a
     preferred currency, which will be deduced on first trade if not specified.
 
+    Default action period is once per day, starting at a random time during the day.
     """
-    def __init__( self, identity=None, assets=None, currency=None, now=None, **kwds ):
+    def __init__( self, identity=None, assets=None, currency=None, now=None,
+                  start=random.random() * day, interval=day, **kwds ):
         super( agent, self ).__init__( **kwds )
         self.identity		= identity or hex( id( self ))
         self.currency		= currency # May be None 'til deduced
         self.trades		= []
         self.assets		= {}   			# { 'something': 1000, 'another': 500 }
+        self.balances		= {}   			# { 'USD': 1000, 'CAD': -1.23 }
         if assets:
             self.assets.update( assets )
         self.now		= now if now is not None else timer()
         self.dt			= 0.			# The latest tick
+        self.start		= start
+        self.interval		= interval
 
     def __str__( self ):
         return self.identity
 
     @property
     def balance( self ):
-        """self.balance -- access/adjust balance in preferred currency (in .assets).  Will remain None 'til
-        self.currency set (or deduced in first trade).
+        """self.balance -- access/adjust balance in preferred currency.  Will return
+        0 'til self.currency set (or deduced in first trade).
 
         """
-        return None if self.currency is None else self.assets.get( self.currency )
+        return 0 if self.currency is None else self.balances.get( self.currency, 0 )
     @balance.setter
     def balance( self, value ):
         assert self.currency is not None, \
             "No agent currency defined/deduced; cannot change balance"
-        if self.balance: # Currency balance not None/0:
+        if self.balance: # Currency balance not 0
             logging.warning( "{:<20s} balance adjusted from {}${:9.4f} to {:9.4f}".format(
                 str( self ), self.currency, self.balance, value ))
-        self.assets[self.currency] = value
+        self.balances[self.currency] = value
 
     def run( self, exch, now=None ):
-        """Compute the time quanta 'dt' since last execution, and update current 'now'."""
+        """When start/interval satisfied, compute the time quanta 'dt' since last
+        execution, update current 'now', and return True, indicating that agent
+        should execute behavior.
+
+        """
         last			= self.now
-        self.now		= now if now is not None else timer()
+        if now is None:
+            now			= timer()
+        if now < self.start or now - last < self.interval:
+            return False
+        self.now		= now
         self.dt			= self.now - last
+        return True
 
     def record( self, order, comment=None ):
         """
@@ -106,9 +122,9 @@ class agent( object ):
         except KeyError:
             self.assets[order.security]  = order.amount
         try:
-            self.assets[order.currency] += -order.amount * order.price
+            self.balances[order.currency] += -order.amount * order.price
         except KeyError:
-            self.assets[order.currency]  = -order.amount * order.price
+            self.balances[order.currency]  = -order.amount * order.price
 
     def volume( self, security=None, period=None, now=None ):
         """Compute the total buy/sell volumes over the period (ending 'now', or self.now)."""
@@ -126,8 +142,7 @@ class agent( object ):
 
 
 class actor( agent ):
-    """
-    Each actor produces and/or requires certain amounts of commodities
+    """Each actor produces and/or requires certain amounts of commodities
     (eg. food, goods, housing, labour) per time period.  The market should reach
     an equilibrium price for all of these, depending on their desirability
     (demand -- how many need it, and how much is needed) and rarity (supply --
@@ -156,6 +171,11 @@ class actor( agent ):
     Each time the actor is run, it may go into the market to buy/sell something;
     if other actors are in the market simultaneously with a corresponding
     sell/buy, then a trade may take place.
+
+    Assumes that a trading.exchange is being used, since multiple securities
+    will generally be in "needs". However, will work with a single
+    trading.market.
+
     """
     def __init__( self, identity=None, target=None,
                   needs=None, balance=None, minimum=0., now=None, **kwds ):
@@ -174,8 +194,8 @@ class actor( agent ):
         super( actor, self ).record( order=order, comment=comment )
 
     def run( self, exch, now=None ):
-        """
-        Do whatever this actor does in this market, adjusting any open trades.
+        """Whenever we should run (according to start/interval), do whatever this
+        actor does in this market, adjusting any open trades.
 
         A basic actor has assets, and a list of needs, each with a cycle and
         priority relative to others.  For example, he might sell labor to buy
@@ -189,12 +209,14 @@ class actor( agent ):
 
         The basic actor tries to acquire things earlier, at a price below the
         current market rate, if possible.
-        """
-        super( actor, self ).run( exch=exch, now=now )
 
+        """
+        if not super( actor, self ).run( exch=exch, now=now ):
+            return False
         self.acquire_needs( exch )
         self.cover_balance( exch )
         self.fix_portfolio( exch )
+        return True
 
     def acquire_needs( self, exch ):
         """
@@ -242,11 +264,7 @@ class actor( agent ):
                 factor		= scale( proportion, (0., 1.), (0.90, 1.05))
                 price_tuple	= exch.price( n.security ) # bid,ask,last
                 price		= max( 0 if p is None else p.price for p in price_tuple )
-                if price is None or near( 0, price ):
-                    # No market yet!  Offer 1 cent per unit.
-                    offer	= 0.01
-                else:
-                    offer	= factor * price
+                offer		= factor * price # If no market yet, offer could be $0 per unit.
                 logging.info(
                     "%s needs %d %s; bidding $%7.2f (%7.2f of $%7.2f price)" % (
                         self, short, n.security, offer,
@@ -266,33 +284,39 @@ class actor( agent ):
         on hand, the less likely we are to sell assets, and the more we'll
         charge for them.
         """
-        value = 0.
-        buying = []
+        value			= 0.
+        buying			= []
         for order in exch.open( self ):
             value	       += order.amount * order.price
             if order.amount > 0:
                 buying.append( order.security )
-
-        if value > self.balance:
-            # We're trying to buy more stuff than we can afford.  Sell!
-            self.raise_capital( value - self.balance, exch, exclude=buying )
+        # eg.       0   - 100   < -75  --> $ 25 over limit
+        #         500   - 200   < 400  --> $100 over limit
+        if self.balance - value < self.minimum: # .minimum count be -math.inf
+            # We're trying to buy more stuff than we can afford.  Sell to raise required capital
+            #                           -75  -   0          + 100 == 25
+            #                           400  - 500          + 200 == 100
+            self.raise_capital( self.minimum - self.balance + value - self.minimum, exch, exclude=buying )
 
     def check_holdings( self, exch, exclude=None ):
-        """
-        Return the value of our holdings beyond our target levels on
-        the given exchange, except those in the exclude list.
+        """Return the value of our holdings beyond our target levels on the given
+        exchange, except those in the exclude list.
+
+        Will not return holdings for which there is no current market (ie. no
+        bid/ask/last price), because we may want to sell at market price.
+
         """
         excess 			= {}
-        for sec, bal in self.assets.items():
+        for sec,bal in self.assets.items():
             if exclude and sec in exclude:
                 continue
             price_tuple		= exch.price( sec )
             price		= max( 0 if p is None else p.price for p in price_tuple )
-            if price is None:
+            if near( price, 0 ):
                 continue
             # There is bidding on this security.  Compute the value of
             # our excess amount of each security we hold.
-            excess[sec] = price * (self.assets[sec] - self.target.get( sec, 0 ))
+            excess[sec]		= price * (self.assets[sec] - self.target.get( sec, 0 ))
         return excess
 
     def raise_capital( self, value, exch, exclude=None ):
@@ -304,20 +328,19 @@ class actor( agent ):
         at high prices when not in need of cash, and larger amounts at
         lower prices when in need.
         """
-        excess = {}
         logging.warning(
             "%s wants to raise an additional $%7.2f; presently has $%7.2f" % (
                 self, value, self.balance ))
 
-        excess = self.check_holdings( exch, exclude=exclude )
+        excess			= self.check_holdings( exch, exclude=exclude )
 
-        for sec, val in sorted( excess.items(), key=lambda sv: -sv[1] ):
+        for sec,val in sorted( excess.items(), key=lambda sv: -sv[1] ):
             # Sell some of the securities at current market rate (no price) we
             # have the most excess value of, 'til we have enough.  We'll have to
             # guess approximately how many units, because we don't know exactly
             # what the sale price will be.
             overage 		= (self.assets[sec] - self.target.get( sec, 0 ))
-            amount 		= min( int( value / excess[sec] ) + 1, overage )
+            amount 		= min( value // excess[sec] + 1, overage )
             estimate 		= amount * excess[sec] / overage   # units * $/unit
             print( "Sell %d of %d excess %s (worth ~%7.2f) for about %7.2f" % (
                 amount, overage, sec, val, estimate  ))
@@ -329,6 +352,19 @@ class actor( agent ):
             if value <= 0:
                 break
 
+    def fix_portfolio( self, exch ):
+        pass
+
+class actor_inflation_pump( actor ):
+    """Consults credit.inflation to decide buy/sell decisions, and tries to adjust
+    holdings to shrink during inflation and grow during deflation.
+
+    TODO: Must 
+    """
+    def __init__( self, identity=None, credit=None, **kwds ):
+        super( actor_inflation_pump, self ).__init__( identity=identity, **kwds )
+        self.credit		= credit
+        
     def fix_portfolio( self, exch ):
         """
         The default behaviour is to buy low, and sell high.
@@ -349,39 +385,14 @@ class actor( agent ):
         inflation or deflation -- this will effect every commodity, not just the
         one that might be at the root of the in/deflation.
         """
-        bases = {
-            "alloys": 1.00,
-            "energy": 2.00,
-            "arrays": 4.00,
-            }
-
-        # Compute inflation.  <1.0 --> deflation (prices too low), >1.0 --> inflation
-        total 			= 0.
-        reference 		= 0.
-        for sec, bas in bases.items():
-            reference 	       += bas
-            price_tuple		= exch.price( sec ) # bid,ask,last
-            price		= max( 0 if p is None else p.price for p in price_tuple )
-            print( "Inflation: %s @%r" % ( sec, price ))
-            total 	       += price
-        inflation 		= total / reference
-        print( "Inflation == %7.2f" % ( inflation ))
-
-        buying 			= {}
-        selling 		= {}
-        open 			= exch.open( self )
-        for order in open:
-            if order.amount > 0:
-                buying[order.security] = order.amount
-            else:
-                selling[order.security] = -order.amount
+        print( "Inflation == %7.2f" % ( self.credit.inflation ))
 
         holdings 		= self.check_holdings( exch )
         print( repr( holdings.items() ))
-        for sec, val in sorted( holdings.items(), key=lambda sv: -sv[1], reverse=True ):
+        for sec,val in sorted( holdings.items(), key=lambda sv: -sv[1], reverse=True ):
             print( "fix: %s: holds %s" % ( sec, val ))
             amount 		= 1
-            if inflation < 1.0:
+            if self.credit.inflation < 1.0:
                 # Prices too low; buy at market!
                 exch.enter( trade_t( security=sec, price=math.nan, currency=exch.currency,
                                            time=self.now, amount=amount,

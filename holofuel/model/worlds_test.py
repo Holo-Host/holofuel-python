@@ -2,7 +2,7 @@ import time
 import random
 
 from . import near
-from .trading import market, engine, world, world_realtime, day, hour, second
+from .trading import actor, market, engine, world, world_realtime, day, hour, second
 from .reserve_lifo import reserve_issuing
 
 def test_world_realtime():
@@ -489,10 +489,14 @@ def test_value_stability():
     We'll plug in the various Reserve implementation to see how they perform.
 
     """
+    class host( actor ):
+        pass
+    class dApp( actor ):
+        pass
     duration		= 1 * day
     hosts		= 1000
     dApps		= 10
-    res			= reserve_issuing( supply_period=hour )
+    res			= reserve_issuing( "Holofuel/USD", supply_period=hour, supply_available=1000000 )
     agents		= [ host() for _ in range( hosts ) ] + [ dApp() for _ in range( dApps ) ]
-    wld			= world( duration=duration, exch=res, agents=agents )
-    eng			= engine( world=world )
+    wld			= world( duration=duration )
+    eng			= engine( world=wld, exch=res, agents=agents )

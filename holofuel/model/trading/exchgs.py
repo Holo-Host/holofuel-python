@@ -120,9 +120,12 @@ class market( object ):
                 order.currency, order.price, '*' * ( width * abs( order.amount ) // biggest if biggest else 0 ))
             for order in open )
 
+    def __str__( self ):
+        """A market's string representation is its full order book."""
+        return self.name + '/' + self.currency
+
     def __repr__( self ):
-        """A market's representation is its full order book."""
-        return self.format_book()
+        return '<market( ' + str( self ) + ' )>'
 
     def open( self, agent=None ):
         """Yield all currently open trades by this agent; buys will have a +'ve amount, sells a -'ve amount."""
@@ -165,11 +168,15 @@ class market( object ):
             self.selling.append( order )
             self.selling.sort( key=sell_book_key )
 
-    def price( self ):
+    def price( self, security=None ):
         """Return the current market price spread; bid, ask and last orders.  Ignores market-price
-        (NaN/None) bids/asks.  Remember that the sell (ask) will have -'ve amounts!
+        (NaN/None) bids/asks.  Remember that the sell (ask) will have -'ve amounts!  We'll accept a
+        security (for compabitility w/ exchange.price( <security> ).
 
         """
+        if security is not None:
+            assert security == self.name, \
+                "Security {!r} incorrect for market {!r}".format( security, self )
         bid			= None
         for order in reversed( self.buying ):
             if not non_value( order.price ):
@@ -295,7 +302,7 @@ class exchange( object ):
         
     def open( self, agent ):
         """
-        Yeilds all open orders for the agent, in all markets.
+        Yields all open orders for the agent, in all markets.
         """
         for mkt in self.markets.values():
             for ord in mkt.open( agent ):
@@ -312,6 +319,10 @@ class exchange( object ):
         self.markets[security].buy( agent, amount, price, now=now, update=update )
 
     def enter( self, order, update=True ):
+        """Enter the trade in the appropriate market, creating one if necessary.  Use this API, if you don't
+        know if you're being supplied a market or an exchange.
+
+        """
         if order.security not in self.markets:
             # Unless such a market already exists, disallow creating markets in other currencies
             assert order.currency == self.currency, \

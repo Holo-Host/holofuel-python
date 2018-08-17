@@ -25,13 +25,7 @@ import logging
 
 from .. import timer
 
-# Some typical simulation time periods
-second				= 1
-minute				= 60 * second
-hour				= 60 * minute
-day				= 24 * hour
-year				= 365 * day + day // 4	# ~365.25 days / average year
-month				= year // 12		# An average month
+from ..consts import * # day, ...
 
 class world( object ):
     """The basic world that runs its clock with no delay."""

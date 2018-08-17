@@ -21,25 +21,10 @@ __email__                       = "perry.kundert@holo.host"
 __copyright__                   = "Copyright (c) 2018 Perry Kundert"
 __license__                     = "GPLv3+"
 
-import logging
-
-from .. import timer
-
-class engine( object ):
-    """The basic engine runs everything according to the world's time defined periods."""
-    def __init__( self, world=None, exch=None, agents=None, **kwds ):
-        super( engine, self ).__init__( **kwds )
-        self.world		= world
-        self.exchange		= exch
-        self.agents		= agents
-
-    def run( self ):
-        """ Give every agent a chance to do something on every time quanta, and then let
-        the exchange solve for matching trades placed during that quanta."""
-        for now in self.world.periods():
-            for agent in self.agents:
-                started		= timer()
-                if agent.run( exch=self.exchange, now=now ):
-                    duration	= timer() - started
-                    logging.info( "Agent {:15s} executed in {:7.4f}s".format( str( agent ), duration ))
-            self.exchange.execute_all( now=now )
+# Some typical simulation time periods
+second				= 1
+minute				= 60 * second
+hour				= 60 * minute
+day				= 24 * hour
+year				= 365 * day + day // 4	# ~365.25 days / average year
+month				= year // 12		# An average month
