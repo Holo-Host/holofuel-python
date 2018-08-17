@@ -53,7 +53,7 @@ class agent( object ):
     """A basic trading agent.  Simply records its trades, keeps track of its net assets.  Has a
     preferred currency, which will be deduced on first trade if not specified.
 
-    Default action period is once per day, starting at a random time during the day.
+    Default action period is once per day, starting at a random time during the day (eg. like a person).
     """
     def __init__( self, identity=None, assets=None, currency=None, now=None,
                   start=random.random() * day, interval=day, **kwds ):
@@ -65,8 +65,8 @@ class agent( object ):
         self.balances		= {}   			# { 'USD': 1000, 'CAD': -1.23 }
         if assets:
             self.assets.update( assets )
-        self.now		= now if now is not None else timer()
-        self.dt			= 0.			# The latest tick
+        self.now		= None			# We have not executed previously
+        self.dt			= 0
         self.start		= start
         self.interval		= interval
 
@@ -95,15 +95,15 @@ class agent( object ):
         should execute behavior.
 
         """
-        last			= self.now
         if now is None:
             now			= timer()
-        if now < self.start or now - last < self.interval:
-            return False
-        self.now		= now
-        self.dt			= self.now - last
-        return True
-
+        if now >= self.start:
+            if self.now is None or now - self.now >= self.interval:	# Ignores self.interval on first execution
+                self.now	= now
+                self.dt		= now - ( self.start if self.now is None else self.now ) # last may be None on first execution
+                return True
+        return False
+        
     def record( self, order, comment=None ):
         """
         Buy/sell the specified amount of security, at the given price.  If

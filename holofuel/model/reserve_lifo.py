@@ -182,12 +182,13 @@ class reserve( trading.market, trading.agent ):
     While having no net effect on the amount of Holo Fuel in the system, it does give us valuable
     price information that could be useful for automation.
 
+    Our agent is active on every invocation of its run method (0 start/interval).
     """
     def __init__( self, name, identity=None, reserves=None, **kwds ):
         assert name, "A Reserve name (eg. 'Security/Currency') must be provided"
         if not identity: # The Reserve's Market Maker agent
             identity		= '{} Reserve'.format( name ) # Eg. HoloFuel/USD Reserve
-        super( reserve, self ).__init__( name=name, identity=identity, **kwds )
+        super( reserve, self ).__init__( name=name, identity=identity, start=0, interval=0, **kwds )
         self.reserves	= dict( reserves ) if reserves else {} # { <price>: <amount>, ... }
         self.run( now=self.now )
 

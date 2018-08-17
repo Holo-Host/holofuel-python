@@ -45,7 +45,6 @@ def test_reserve_issuing():
     print( "reserves: {!r}".format( Holofuel_USD.reserves ))
     print( "{!r}".format( Holofuel_USD ))
 
-    stipend			= 1000
     agent_count			= 100
     holo_need			= 100.00 # / month Start a bunch of agents, each of whom will need
     # to acquire an hour's worth of Holo fuel for hosting a Holofuel$100.0/mo dApp.  Assume they can

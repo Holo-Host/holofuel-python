@@ -21,6 +21,7 @@ __email__                       = "perry.kundert@holo.host"
 __copyright__                   = "Copyright (c) 2018 Perry Kundert"
 __license__                     = "GPLv3+"
 
+import datetime
 import logging
 
 from .. import timer
@@ -57,6 +58,15 @@ class world( object ):
             yield self.now
             self.advance()
 
+    def format_offset( self, dt, ms=True, symbols=('','') ):
+        """Convert a floating point number of -'ve/+'ve seconds into 'h:mm:ss.sss'"""
+        return ( ( symbols[0] if dt < 0 else symbols[1] ) + "%2d:%02d:" + ( "%06.3f" if ms else "%02d" )) % (
+            int( abs( dt ) // 3600 ),
+            int( abs( dt ) % 3600 // 60 ),
+            abs( dt ) % 60 )
+
+    def format_now( self, now, ms=True ):
+        return self.format_offset( now, ms=ms )
         
 class world_realtime( world ):
     """We advance in real-time x <scale> for the specified duration. """
@@ -92,3 +102,7 @@ class world_realtime( world ):
         duration		= timer() - self.start
         self.now		= self.start + duration * self.scale
     
+    def format_now( self, now, ms=True ):
+        return ' + '.join( ( datetime.utcfromtimestamp( self.start ).strftime( '%Y-%m-%d %H:%M:%S UTC' ),
+                             super( world_realtime, self ).format_now( now - self.start, ms=ms ) ) )
+

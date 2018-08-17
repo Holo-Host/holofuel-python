@@ -41,5 +41,8 @@ class engine( object ):
                 started		= timer()
                 if agent.run( exch=self.exchange, now=now ):
                     duration	= timer() - started
-                    logging.info( "Agent {:15s} executed in {:7.4f}s".format( str( agent ), duration ))
+                    msg		= "{} Agent {:15s} executed in {:7.4f}s".format(
+                        self.world.format_now( now ), str( agent ), duration )
+                    print( msg )
+                    logging.info( msg )
             self.exchange.execute_all( now=now )
