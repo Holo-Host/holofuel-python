@@ -50,13 +50,17 @@ need_t				= collections.namedtuple(
 
 
 class agent( object ):
-    """A basic trading agent.  Simply records its trades, keeps track of its net assets.  Has a
-    preferred currency, which will be deduced on first trade if not specified.
+    """A basic trading agent.  Simply records its trades, keeps track of its net
+    assets.  Has a preferred currency, which will be deduced on first trade if
+    not specified.
 
-    Default action period is once per day, starting at a random time during the day (eg. like a person).
+    Default is no lower bound on quanta (always execute), and default start is a
+    random fraction of the desired quanta (so agents with identical target
+    quanta start at a random point during the first quanta).
+
     """
     def __init__( self, identity=None, assets=None, currency=None, now=None,
-                  start=random.random() * day, interval=day, **kwds ):
+                  start=None, quanta=None, **kwds ):
         super( agent, self ).__init__( **kwds )
         self.identity		= identity or hex( id( self ))
         self.currency		= currency # May be None 'til deduced
@@ -67,8 +71,12 @@ class agent( object ):
             self.assets.update( assets )
         self.now		= None			# We have not executed previously
         self.dt			= 0
+        if quanta is None:
+            quanta		= 0
+        if start is None:
+            start		= quanta * random.random()
         self.start		= start
-        self.interval		= interval
+        self.quanta		= quanta
 
     def __str__( self ):
         return self.identity
@@ -90,20 +98,19 @@ class agent( object ):
         self.balances[self.currency] = value
 
     def run( self, exch, now=None ):
-        """When start/interval satisfied, compute the time quanta 'dt' since last
-        execution, update current 'now', and return True, indicating that agent
-        should execute behavior.
+        """When start/quanta times are satisfied, compute the time quanta 'dt' since last execution, update
+        current 'now', and return True, indicating that agent should execute its behavior.
 
         """
         if now is None:
             now			= timer()
         if now >= self.start:
-            if self.now is None or now - self.now >= self.interval:	# Ignores self.interval on first execution
+            if self.now is None or now - self.now >= self.quanta:	# Ignores self.quanta on first execution
                 self.now	= now
-                self.dt		= now - ( self.start if self.now is None else self.now ) # last may be None on first execution
+                self.dt		= now - ( self.start if self.now is None else self.now )
                 return True
         return False
-        
+
     def record( self, order, comment=None ):
         """
         Buy/sell the specified amount of security, at the given price.  If
@@ -176,10 +183,20 @@ class actor( agent ):
     will generally be in "needs". However, will work with a single
     trading.market.
 
+
+    Default actor quanta is once per day (eg. somewhat like a person).  Default
+    starting time is a random portion of the quanta.  It is assumed that the
+    quanta will be adjusted to produce trading periods appropriate for the
+    'needs' deadline/cycle being simulated; no attempt to adjust amounts by each
+    quanta's specific dt is made.
+
     """
     def __init__( self, identity=None, target=None,
-                  needs=None, balance=None, minimum=0., now=None, **kwds ):
-        super( actor, self ).__init__( identity=identity, **kwds )
+                  needs=None, balance=None, minimum=0., now=None,
+                  quanta=None, **kwds ):
+        if quanta is None:
+            quanta		= day
+        super( actor, self ).__init__( identity=identity, quanta=quanta, **kwds )
 
         # These are the target levels (if any) and assets holdings
         self.target		= {}			# { 'something': 350, ...}
@@ -205,7 +222,7 @@ class actor( agent ):
         and update self.now, and arrange to acquire the upcoming needs.  As the
         deadline for a need approaches, the urgency to acquire the need
         increases.  Assets that are not needed will be sold, if necessary, to
-        supply the needs.
+        raise capital to supply the needs.
 
         The basic actor tries to acquire things earlier, at a price below the
         current market rate, if possible.
@@ -219,15 +236,13 @@ class actor( agent ):
         return True
 
     def acquire_needs( self, exch ):
-        """
-        Iterate over needs by priority first, then deadline.  The 'target'
+        """Iterate over needs by priority first, then deadline.  The 'target'
         amount is the base amount of the security we must have on hand; when a
         need expires, it is added to target.
 
         Issue market trade orders for those securities we have an upcoming need
         for, modulating our bid depending on the urgency of the need.
 
-        The target is increased when the need's 
         """
         nl = sorted(self.needs)
         needs = []
