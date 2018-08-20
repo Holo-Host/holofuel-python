@@ -23,8 +23,9 @@ __license__                     = "GPLv3+"
 
 # Some typical simulation time periods
 second				= 1
-minute				= 60 * second
-hour				= 60 * minute
-day				= 24 * hour
+minute				=  60 * second
+hour				=  60 * minute
+day				=  24 * hour
+week				=   7 * day
 year				= 365 * day + day // 4	# ~365.25 days / average year
 month				= year // 12		# An average month
