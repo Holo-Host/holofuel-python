@@ -38,22 +38,37 @@ def test_reserve_simple():
     assert near( bid.price, .001 )
 
 def test_reserve_issuing():
-    logging.getLogger().setLevel( logging.INFO )
+    # Make
+    supply_available		= 1000
+    supply_period		= 1 * day
     Holofuel_USD		= reserve_issuing( name="HoloFuel/USD",
-                                        supply_book_value=1.0, supply_period=60*60, supply_available=1000000 )
+                                        supply_book_value=1.0, supply_period=supply_period, supply_available=supply_available )
     print( "assets:   {!r}".format( Holofuel_USD.assets ))
     print( "reserves: {!r}".format( Holofuel_USD.reserves ))
     print( "{!r}".format( Holofuel_USD ))
 
-    agent_count			= 100
+    agent_count			= 10
     holo_need			= 100.00 # / month Start a bunch of agents, each of whom will need
     # to acquire an hour's worth of Holo fuel for hosting a Holofuel$100.0/mo dApp.  Assume they can
     # go into infinite debt.
-    agents			= [ trading.actor( "A{}".format( n ), currency=Holofuel_USD.currency, balance=0., minimum=-math.inf,
-                                        needs=[ need_t( 1, trading.hour * random.random(), 'HoloFuel', hour, holo_need * hour // month ) ] )
-                                    for n in range( agent_count ) ]
+    agents			= [
+        trading.actor(
+            identity	= "A{}".format( n ),
+            currency	= Holofuel_USD.currency,
+            balance	= 0.,
+            minimum	= -math.inf,
+            quanta	= hour,
+            needs	= [ need_t( 1, None, 'HoloFuel', month, holo_need ) ] )
+        for n in range( agent_count )
+    ]
     
-    duration		= 1 * day
-    wld			= world( duration=duration )
-    eng			= engine( world=wld, exch=Holofuel_USD, agents=agents )
+    duration			= 7 * day
+    wld				= world( duration=duration )
+    class engine_status( engine ):
+        def cycle( self, now ):
+            super( engine_status, self ).cycle( now )
+            if logging.getLogger().isEnabledFor( logging.INFO ):
+                logging.info( "%s Orders:\n%s",
+                              self.world.format_now( now ), self.exchange.format_book() )
+    eng				= engine_status( world=wld, exch=Holofuel_USD, agents=agents )
     eng.run()

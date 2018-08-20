@@ -41,11 +41,11 @@ from .consts import * # day, ...
 
 need_t				= collections.namedtuple( 
     'Need', [
-        'priority', 
-        'deadline', 
-        'security',
-        'cycle', 
-        'amount',
+        'priority', 	# Sort needs by priority
+        'deadline', 	# Then by deadline (if None, will compute on first execution)
+        'security',	# The security name
+        'cycle', 	# The needs cyclical time
+        'amount',	#   and the amount additionally required per cycle
         ] )
 
 
@@ -243,30 +243,40 @@ class actor( agent ):
         Issue market trade orders for those securities we have an upcoming need
         for, modulating our bid depending on the urgency of the need.
 
-        """
-        nl = sorted(self.needs)
-        needs = []
-        for n in nl:
-            # First, see if this need's deadline has arrived; if so, record that
-            # the need was expended (eg. food eaten, rent due, ...) by
-            # increasing the target for that need, and reschedule the need.
-            if self.now < n.deadline:
-                needs.append( n )
-            else:
-                try:    self.target[n.security] += n.amount
-                except: self.target[n.security]  = n.amount
-                needs.append( need_t( n.priority, n.deadline + n.cycle, 
-                                      n.security, n.cycle, n.amount ))
-                logging.info(
-                    "%s increased target for %s to %7.2f" % (
-                        self, n.security, self.target[n.security] ))
+        A need with a deadline of None has its next cyclical deadline computed,
+        from now.
 
-            # See if we are short, and try to acquire if so
-            short		= (n.amount + self.target.get( n.security, 0 )
-                                   - self.assets.get( n.security, 0 ))
+        """
+        needs			= [] # replacements self.needs
+        for n in sorted( self.needs ):
+            # First, see if this need's deadline has arrived; if so, record that the need was
+            # expended (eg. food eaten, rent due, assets allocated...) by increasing the target for
+            # that need, and reschedule the need.  A need w/ deadline == None will have its next
+            # deadline computed on first execution.
+            if n.deadline is not None and self.now < n.deadline:
+                needs.append( n ) # Deadline not yet expired; re-schedule
+            else:
+                # Deadline None/expired; compute next deadline, add amount to target if expired
+                if n.deadline is not None:
+                    try:    self.target[n.security] += n.amount
+                    except: self.target[n.security]  = n.amount
+                    logging.info( "%s increased target for %s to %7.2f" % (
+                        self, n.security, self.target[n.security] ))
+                # And lets use/schedule an updated need_t w/ the newly computed deadline
+                n		= need_t( n.priority,
+                                          ( self.now if n.deadline is None else n.deadline ) + n.cycle, 
+                                          n.security, n.cycle, n.amount )
+                needs.append( n )
+
+            # See if we are short of the amount required by the next deadline,
+            # and try to acquire if so, with increasing urgency.
+            wants		= self.target.get( n.security, 0 )
+            holds		= self.assets.get( n.security, 0 )
+            short		= n.amount + wants - holds
             if short <= 0:
-                logging.info(
-                    "%s has full target of %s" % (self, n.security))
+                logging.info( "%s has full target %5d of %s: %5d/%5d" % (
+                    self, n.amount, n.security, holds, wants ))
+                exch.close( agent=self, security=n.security )
             else:
                 # Hmm. We're short.  Adjust our offered purchase price based on
                 # how much of the need's cycle remains.  If the deadline passes,
@@ -281,14 +291,16 @@ class actor( agent ):
                 price		= max( 0 if p is None else p.price for p in price_tuple )
                 offer		= factor * price # If no market yet, offer could be $0 per unit.
                 logging.info(
-                    "%s needs %d %s; bidding $%7.2f (%7.2f of $%7.2f price)" % (
+                    "%15s needs %d %s; bidding $%7.4f (%7.4f of $%7.4f price)" % (
                         self, short, n.security, offer,
                         factor, price if price else math.nan ))
-                # Enter the trade for the required item, updating existing order
+                # Enter the trade for the required item, updating existing orders
                 exch.enter( trade_t( security=n.security, price=offer, currency=exch.currency,
                                            time=self.now, amount=short,
                                            agent=self ),
                             update=True )
+        # Finally, update our needs w/ the refreshed list computed (new deadlines, etc.)
+        self.needs		= needs
 
     def cover_balance( self, exch ):
         """

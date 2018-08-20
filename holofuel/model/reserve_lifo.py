@@ -297,7 +297,7 @@ class reserve_issuing( reserve ):
         """
         super( reserve_issuing, self ).run( exch=exch, now=now ) # closes all open orders, issues buys
         buy,sell		= self.volume( period=self.supply_period, now=now )
-        supply_sold_period	= sell - buy
+        supply_sold_period	= sell - buy # Could be -'ve if we've been net seller
         supply_price		= self.supply_book_value * self.supply_premium
         if supply_sold_period < self.supply_available:
             self.sell( agent=self, amount=self.supply_available - supply_sold_period, price=supply_price )

@@ -33,16 +33,17 @@ class engine( object ):
         self.exchange		= exch
         self.agents		= agents
 
+    def cycle( self, now ):
+        for agent in self.agents:
+            started		= timer()
+            if agent.run( exch=self.exchange, now=now ):
+                duration	= timer() - started
+                logging.debug( "%s Agent %15s executed in %7.4fs",
+                               self.world.format_now( now ), str( agent ), duration )
+        self.exchange.execute_all( now=now )
+        
     def run( self ):
         """ Give every agent a chance to do something on every time quanta, and then let
         the exchange solve for matching trades placed during that quanta."""
         for now in self.world.periods():
-            for agent in self.agents:
-                started		= timer()
-                if agent.run( exch=self.exchange, now=now ):
-                    duration	= timer() - started
-                    msg		= "{} Agent {:15s} executed in {:7.4f}s".format(
-                        self.world.format_now( now ), str( agent ), duration )
-                    print( msg )
-                    logging.info( msg )
-            self.exchange.execute_all( now=now )
+            self.cycle( now )

@@ -113,11 +113,11 @@ class market( object ):
     def format_book( self, width=40 ):
         """Print buy/sell order book w/ incl. depth chart."""
         open		= list( self.open() )
-        biggest		= max( [ order.amount for order in open ] if open else [0] ) # python2 compatibility for python3 max( ..., default=0 )
+        biggest		= max( [ abs( order.amount ) for order in open ] if open else [0] ) # python2 compatibility for python3 max( ..., default=0 )
         return '\n'.join(
-            "{:<20s} {:4} {:9d} @ {}${:7.4f} {}".format( str( order.agent ),
+            "{:<20s} {:4} {:9.4f} @ {}${:7.4f} {}".format( str( order.agent ),
                 "buy" if order.amount > 0 else "sell", abs( order.amount ),
-                order.currency, order.price, '*' * ( width * abs( order.amount ) // biggest if biggest else 0 ))
+                order.currency, order.price, '*' * int( width * abs( order.amount ) // biggest if biggest else 0 ))
             for order in open )
 
     def __str__( self ):
@@ -133,10 +133,13 @@ class market( object ):
             if agent is None or order.agent is agent:
                 yield order
 
-    def close( self, agent ):
+    def close( self, agent, security=None ):
         """
         Remove all open trades by agent.
         """
+        if security is not None:
+            assert security == self.name, \
+                "Security {!r} incorrect for market {!r}".format( security, self )
         self.buying  = [ order for order in self.buying  if order.agent is not agent ]
         self.selling = [ order for order in self.selling if order.agent is not agent ]
 
@@ -300,11 +303,20 @@ class exchange( object ):
     def __repr__( self ):
         return "\n".join( (repr( m ) for m in self.markets.values()))
         
-    def open( self, agent ):
+    def close( self, agent, security=None ):
+        """Close all open orders for the agent, in all markets (or in market matching security)."""
+        for sec,mkt in self.markets.items():
+            if security is not None and sec != security:
+                continue
+            mkt.close( agent )
+
+    def open( self, agent, security=None ):
         """
-        Yields all open orders for the agent, in all markets.
+        Yields all open orders for the agent, in all markets (or in market matching security).
         """
-        for mkt in self.markets.values():
+        for sec,mkt in self.markets.items():
+            if security is not None and sec != security:
+                continue
             for ord in mkt.open( agent ):
                 yield ord
 
