@@ -60,10 +60,14 @@ class world( object ):
 
     def format_offset( self, dt, ms=True, symbols=('','') ):
         """Convert a floating point number of -'ve/+'ve seconds into 'h:mm:ss.sss'"""
-        return ( ( symbols[0] if dt < 0 else symbols[1] ) + "%2d:%02d:" + ( "%06.3f" if ms else "%02d" )) % (
-            int( abs( dt ) // 3600 ),
-            int( abs( dt ) % 3600 // 60 ),
-            abs( dt ) % 60 )
+        return ( ( symbols[0] if dt < 0 else symbols[1] )
+                 + "%2dd "
+                 + "%2d:%02d:"
+                 + ( "%06.3f" if ms else "%02d" )) % (
+            int( abs( dt ) // day ),
+            int( abs( dt ) % day  // hour ),
+            int( abs( dt ) % hour // minute ),
+            abs( dt ) % minute )
 
     def format_now( self, now, ms=True ):
         return self.format_offset( now, ms=ms )
