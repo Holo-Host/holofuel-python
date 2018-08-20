@@ -14,13 +14,18 @@
 # You should have received a copy of the GNU General Public License
 # along with Holo Fuel.  If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import absolute_import, print_function, division
+
 __author__                      = "Perry Kundert"
 __email__                       = "perry.kundert@holo.host"
 __copyright__                   = "Copyright (c) 2018 Perry Kundert"
 __license__                     = "GPLv3+"
 
-# These are the modules that can be explicitly loaded with 'from holofuel import *'
-__all__                         = ["model"]
-
-# These modules/symbols for the public interface of the holofuel module
-from .version  import __version__, __version_info__
+# Some typical simulation time periods
+second				= 1
+minute				=  60 * second
+hour				=  60 * minute
+day				=  24 * hour
+week				=   7 * day
+year				= 365 * day + day // 4	# ~365.25 days / average year
+month				= year // 12		# An average month

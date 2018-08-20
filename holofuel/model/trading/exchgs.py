@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-stock 		-- Market simulation framework
+trading		-- Market simulation framework
   .market	-- A market in one security
   .exchange	-- Many simultaneous securities markets
 
@@ -25,7 +25,7 @@ stock 		-- Market simulation framework
 from __future__ import absolute_import, print_function, division
 
 __author__                      = "Perry Kundert"
-__email__                       = "perry@kundert.ca"
+__email__                       = "perry.kundert@holo.host"
 __copyright__                   = "Copyright (c) 2018 Perry Kundert"
 __license__                     = "GPLv3+"
 
@@ -35,17 +35,18 @@ import logging
 
 from .. import nan_first, nan_last, timer, non_value
 
-trade = collections.namedtuple( 
+trade_t				= collections.namedtuple( 
     'Trade', [ 
         'security', 
-        'price', 
+        'price',
+        'currency',
         'time', 
         'amount', 
         'agent',
         ] )
 
 
-prices = collections.namedtuple(
+prices_t			= collections.namedtuple(
     'Prices', [
         'bid', 
         'ask',
@@ -68,8 +69,8 @@ def buy_book_key( order ):
 
 
 class market( object ):
-    """
-    Implements a market for the named security.  Attempts to solve the set of trades available for
+    """Implements a market for the named security.  Uses the "Security/Currency" naming convention or
+    'currency' keyword; default is 'USD'.  Attempts to solve the set of trades available for
     completion at the given moment.  The market supports fixed-price (>= $0.00) and market-price
     (None or NaN) bids.
 
@@ -96,46 +97,61 @@ class market( object ):
          50/200 @ $4.01 from <agent D>
 
     Market-price orders are always processed before fixed-price orders.
+
     """
-    def __init__( self, name, now=None, **kwds ):
-        super( market, self ).__init__( **kwds )
-        self.name 		= name
+    def __init__( self, name, currency=None, now=None, **kwds ):
+        super( market, self ).__init__( **kwds ) # Multiple Inheritance support
+        # Get the base Security name from eg. 'Security/USD'
+        self.name 		= name.split( '/', 1 )[0] if '/' in name else name
+        self.currency		= currency or ( name.split( '/', 1 )[1] if '/' in name else 'USD' )
         self.now 		= now if now is not None else timer()
         self.buying 		= []
         self.selling 		= []
         self.last		= None
         self.transaction	= 0
 
+    def format_book( self, width=40 ):
+        """Print buy/sell order book w/ incl. depth chart."""
+        open		= list( self.open() )
+        biggest		= max( [ abs( order.amount ) for order in open ] if open else [0] ) # python2 compatibility for python3 max( ..., default=0 )
+        return '\n'.join(
+            "{:<20s} {:4} {:9.4f} @ {}${:7.4f} {}".format( str( order.agent ),
+                "buy" if order.amount > 0 else "sell", abs( order.amount ),
+                order.currency, order.price, '*' * int( width * abs( order.amount ) // biggest if biggest else 0 ))
+            for order in open )
+
+    def __str__( self ):
+        """A market's string representation is its full order book."""
+        return self.name + '/' + self.currency
+
     def __repr__( self ):
-        return "\n".join([
-                "%10s: %5d %10s @ %7.2f" % (
-                    order.agent.name, order.amount, order.security, order.price )
-                for order in self.buying + self.selling])
+        return '<market( ' + str( self ) + ' )>'
 
     def open( self, agent=None ):
-        """Yield all currently open trades by this agent; buys will have a +'ve amount, sells a -'ve amount.
-
-        """
+        """Yield all currently open trades by this agent; buys will have a +'ve amount, sells a -'ve amount."""
         for order in itertools.chain( self.buying, self.selling ):
             if agent is None or order.agent is agent:
                 yield order
 
-    def close( self, agent ):
+    def close( self, agent, security=None ):
         """
         Remove all open trades by agent.
         """
+        if security is not None:
+            assert security == self.name, \
+                "Security {!r} incorrect for market {!r}".format( security, self )
         self.buying  = [ order for order in self.buying  if order.agent is not agent ]
         self.selling = [ order for order in self.selling if order.agent is not agent ]
 
     def buy( self, agent, amount, price=None, now=None, update=True ):
         if now is None:
             now 		= timer()
-        self.enter( trade(self.name, price, now, amount, agent ), update=update )
+        self.enter( trade_t( self.name, price, self.currency, now, amount, agent ), update=update )
 
     def sell( self, agent, amount, price=None, now=None, update=True ):
         if now is None:
             now 		= timer()
-        self.enter( trade(self.name, price, now, -amount, agent ), update=update )
+        self.enter( trade_t( self.name, price, self.currency, now, -amount, agent ), update=update )
 
     def enter( self, order, update=True ):
         """
@@ -155,11 +171,15 @@ class market( object ):
             self.selling.append( order )
             self.selling.sort( key=sell_book_key )
 
-    def price( self ):
+    def price( self, security=None ):
         """Return the current market price spread; bid, ask and last orders.  Ignores market-price
-        (NaN/None) bids/asks.  Remember that the sell (ask) will have -'ve amounts!
+        (NaN/None) bids/asks.  Remember that the sell (ask) will have -'ve amounts!  We'll accept a
+        security (for compabitility w/ exchange.price( <security> ).
 
         """
+        if security is not None:
+            assert security == self.name, \
+                "Security {!r} incorrect for market {!r}".format( security, self )
         bid			= None
         for order in reversed( self.buying ):
             if not non_value( order.price ):
@@ -170,7 +190,7 @@ class market( object ):
             if not non_value( order.price ):
                 ask		= order
                 break
-        return prices( bid, ask, self.last )
+        return prices_t( bid, ask, self.last )
 
     def execute_all( self, now=None, record=True ):
         """Execute all trades; If appropriate (record is True), we will also execute the order.agent.record( order )."""
@@ -211,7 +231,7 @@ class market( object ):
             # or NaN, meaning market price).  If both buyer and seller are trading with market-price
             # orders, then the oldest order gets the advantage; market buyers pay highest available
             # seller limit, market sellers get lowest available buyer limit.  If no limit-price
-            # orders exist, then no trade can be made on current prices(there is no market); use the
+            # orders exist, then no trade can be made on current prices_t(there is no market); use the
             # last order traded, if any.
             amount 		= min( self.buying[-1].amount, -self.selling[0].amount )
 
@@ -246,61 +266,81 @@ class market( object ):
 
             logging.info( "market %s at %7.2f" % ( self.name, price ))
             self.transaction   += 1
-            buy = self.last 	= trade( self.name, price, now,  amount, self.buying[-1].agent )
-            sell		= trade( self.name, price, now, -amount, self.selling[0].agent )
+            buy = self.last 	= trade_t( self.name, price, self.currency, now,  amount, self.buying[-1].agent )
+            sell		= trade_t( self.name, price, self.currency, now, -amount, self.selling[0].agent )
 
             if amount == self.buying[-1].amount:
                 del self.buying[-1]
             else:
-                self.buying[-1] = trade( self.buying[-1].security, self.buying[-1].price,
-                                         self.buying[-1].time, self.buying[-1].amount - amount,
-                                         self.buying[-1].agent )
+                self.buying[-1] = trade_t( self.buying[-1].security, self.buying[-1].price, self.buying[-1].currency,
+                                           self.buying[-1].time, self.buying[-1].amount - amount,
+                                           self.buying[-1].agent )
             if amount == -self.selling[0].amount:
                 del self.selling[0]
             else:
-                self.selling[0] = trade( self.selling[0].security, self.selling[0].price,
-                                         self.selling[0].time, self.selling[0].amount + amount,
-                                         self.selling[0].agent )
+                self.selling[0] = trade_t( self.selling[0].security, self.selling[0].price, self.selling[0].currency,
+                                           self.selling[0].time, self.selling[0].amount + amount,
+                                           self.selling[0].agent )
             yield buy
             yield sell
 
 
 class exchange( object ):
-    """
-    Implements an exchange comprised of any number of securities markets.  New markes are created as
-    required, when trades for a new security are entered.
+    """Implements an exchange comprised of any number of securities markets, in the specified currency
+    (deduce from "Exchange/Currency" naming convention, or default to 'USD').  New markes are
+    created as required, when trades for a new security are entered.
 
-    Much the same as a market, but most methods require a security name.
+    Much the same as a market, but most methods require a security name.  All markets must operate
+    in the exchange's currency.
+
     """
-    def __init__( self, name, **kwds ):
+    def __init__( self, name, currency=None, **kwds ):
         super( exchange, self ).__init__( **kwds )
         self.name	        = name
+        self.currency		= currency or ( name.split('/',1)[1] if '/' in name else 'USD' )
         self.markets		= {}
 
     def __repr__( self ):
         return "\n".join( (repr( m ) for m in self.markets.values()))
         
-    def open( self, agent ):
+    def close( self, agent, security=None ):
+        """Close all open orders for the agent, in all markets (or in market matching security)."""
+        for sec,mkt in self.markets.items():
+            if security is not None and sec != security:
+                continue
+            mkt.close( agent )
+
+    def open( self, agent, security=None ):
         """
-        Yeilds all open orders for the agent, in all markets.
+        Yields all open orders for the agent, in all markets (or in market matching security).
         """
-        for mkt in self.markets.values():
+        for sec,mkt in self.markets.items():
+            if security is not None and sec != security:
+                continue
             for ord in mkt.open( agent ):
                 yield ord
 
     def buy( self, security, agent, amount, price, now=None, update=True ):
         if security not in self.markets:
-            self.markets[security] = market( security )
+            self.markets[security] = market( '/'.join(( security, self.currency )), currency=self.currency )
         self.markets[security].buy( agent, amount, price, now=now, update=update )
 
     def sell( self, security, agent, amount, price, now=None, update=True ):
         if security not in self.markets:
-            self.markets[security] = market( security )
+            self.markets[security] = market( '/'.join(( security, self.currency )), currency=self.currency )
         self.markets[security].buy( agent, amount, price, now=now, update=update )
 
     def enter( self, order, update=True ):
+        """Enter the trade in the appropriate market, creating one if necessary.  Use this API, if you don't
+        know if you're being supplied a market or an exchange.
+
+        """
         if order.security not in self.markets:
-            self.markets[order.security] = market( order.security )
+            # Unless such a market already exists, disallow creating markets in other currencies
+            assert order.currency == self.currency, \
+                "Unable to enter orders for {} in {}$; only {}$ trades supported".format(
+                    order.security, order.currency, self.currency )
+            self.markets[order.security] = market( '/'.join(( order.security, order.currency )), currency=order.currency )
         self.markets[order.security].enter( order, update=update )
 
     def execute( self, now=None ):
@@ -314,4 +354,4 @@ class exchange( object ):
     def price( self, security ):
         if security in self.markets:
             return self.markets[security].price()
-        return prices( None, None, None )
+        return prices_t( None, None, None )

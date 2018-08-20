@@ -17,12 +17,15 @@
 from __future__ import absolute_import, print_function, division
 
 __author__                      = "Perry Kundert"
-__email__                       = "perry@kundert.ca"
+__email__                       = "perry.kundert@holo.host"
 __copyright__                   = "Copyright (c) 2018 Perry Kundert"
 __license__                     = "GPLv3+"
 
 __all__                         = ["model"]
 
 # Make the classes, etc. within the major components visible
+from .consts import *
 from .exchgs import *
 from .actors import *
+from .engine import *
+from .worlds import *

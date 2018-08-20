@@ -40,6 +40,8 @@ upload:
 	python setup.py sdist upload
 
 # Only run tests in this directory.
+test-log-INFO:	PYTESTOPTS += --log-cli-level=INFO --capture=no
+test-log-INFO:	test
 test:
 	@py.test --version || echo "py.test not found; run 'pip install pytest'?"
 	$(PY2TEST)
