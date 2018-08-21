@@ -3,7 +3,7 @@ import random
 import math
 
 from . import trading, near
-from .trading import need_t, engine, world, month, week, day, hour
+from .trading import need_t, engine_status, engine, world, month, week, day, hour
 from .reserve_lifo import reserve, reserve_issuing
 
 def test_reserve_simple():
@@ -52,8 +52,8 @@ def test_reserve_issuing():
     holo_need			= 100.00 # / month Start a bunch of agents, each of whom will need
     holo_need_weekly		= int( holo_need * week // month )
 
-    # to acquire an hour's worth of Holo fuel for hosting a Holofuel$100.0/mo dApp.  Assume they can
-    # go into infinite debt.
+    # Acquire a need; some time unit's worth of Holo fuel for hosting a dApp.  Assume they can go
+    # into infinite debt.
     agents			= [
         trading.actor(
             identity	= "A{}".format( n ),
@@ -64,22 +64,23 @@ def test_reserve_issuing():
             needs	= [ need_t( 1, None, 'HoloFuel', week, holo_need_weekly ) ] )
         for n in range( agent_count )
     ]
-    
+
+    # Lets run a simulation for a month, letting the agents collect their needs. The
+    # prices should rise over time 'til the reserve prices are met
     duration			= 4 * week
     wld				= world( duration=duration )
-    class engine_status( engine ):
-        daynum			= 0
-        def cycle( self, now ):
-            super( engine_status, self ).cycle( now )
-            daynow		= int( now // day )
-            if daynow != self.daynum:
-                self.daynum	= daynow
-                if logging.getLogger().isEnabledFor( logging.INFO ):
-                    logging.info( "%s Orders:\n%s",
-                                  self.world.format_now( now ), self.exchange.format_book() )
-    eng				= engine_status( world=wld, exch=Holofuel_USD, agents=agents )
-    eng.run()
 
+    class eng_sts( engine_status, engine ):
+        def status( self, now=None ): # At exit, now == None
+            print( "%s Orders:\n%s" % (
+                "Exit" if now is None else self.world.format_now( now ),
+                self.exchange.format_book() ))
+
+    with eng_sts( world=wld, exch=Holofuel_USD, agents=agents, status_period=day ) as eng:
+        eng.run()
+
+    # Confirm that the agents acquired the correct amount; their needs were weekly, and the duration
+    # some multiple of that.
     for a in agents:
         for sec,amt in a.assets.items():
             print( "{:15} Owns {:9.4f} {}".format( str( a ), amt, sec ))

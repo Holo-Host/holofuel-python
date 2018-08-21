@@ -24,6 +24,7 @@ __license__                     = "GPLv3+"
 import logging
 
 from .. import timer
+from ..consts import day
 
 class engine( object ):
     """The basic engine runs everything according to the world's time defined periods."""
@@ -47,3 +48,38 @@ class engine( object ):
         the exchange solve for matching trades placed during that quanta."""
         for now in self.world.periods():
             self.cycle( now )
+
+
+class engine_status( object ):
+    """A mixin for an engine that logs a status on some interval (default: daily), eg.
+
+        class my_engine( engine_status, engine ):
+            pass
+        with my_engine( ... ) as eng:
+            eng.run()
+
+    Override status method to output whatever status you want; just logs orders by default.
+    """
+    def __init__( self, status_period=None, **kwds ):
+        super( engine_status, self ).__init__( **kwds )
+        self.status_period	= day if status_period is None else status_period
+        self.pernum		= None
+
+    def __enter__( self ):
+        return self
+        
+    def __exit__( self, *exc ):
+        self.status()
+        return False # Suppress no exceptions
+
+    def status( self, now ):
+        logging.info( "%s Orders:\n%s",
+                      "Exit" if now is None else self.world.format_now( now ),
+                      self.exchange.format_book() )
+
+    def cycle( self, now ):
+        super( engine_status, self ).cycle( now )
+        pernow			= int( now // self.status_period )
+        if pernow != self.pernum:
+            self.pernum		= pernow
+            self.status( now )
