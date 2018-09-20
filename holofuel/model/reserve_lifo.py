@@ -169,9 +169,10 @@ class ReserveAccount:
             print("Buy-Back: {} Fuel @ Price of {:.5f} {}".format(self.reserves[ii][1], self.reserves[ii][0], self.currency_pair))
 
 
-class reserve( trading.market, trading.agent ):
+class reserve( trading.market_selective, trading.agent ):
     """A simple Reserve market (and agent) that just posts sell/asks, at the price it paid/bid for the
-    asset.  Reserves are ordered by price, not by order bought/sold.
+    asset.  Reserves are ordered by price, not by order bought/sold, unless 'LIFO' is True; then,
+    only the oldest tranche is listed for redemption.
 
     While this market has an agent that provides liquidity in the form of Retiring Holo Fuel via
     access to Reserves tranches at their original price, and perhaps Issuing Holo Fuel at some
@@ -186,25 +187,39 @@ class reserve( trading.market, trading.agent ):
     default).
 
     """
-    def __init__( self, name, identity=None, reserves=None, **kwds ):
-        assert name, "A Reserve name (eg. 'Security/Currency') must be provided"
+    def __init__( self, name, identity=None, reserves=None, LIFO=None, **kwds ):
+        """If strict LIFO, only the oldest tranche is listed. """
+        assert name, "A Reserve name (eg. 'Security/Currency') must be provided."
         if not identity: # The Reserve's Market Maker agent
             identity		= '{} Reserve'.format( name ) # Eg. HoloFuel/USD Reserve
         super( reserve, self ).__init__( name=name, identity=identity, **kwds )
         self.reserves	= dict( reserves ) if reserves else {} # { <price>: <amount>, ... }
+        self.LIFO	= True if LIFO else False
         self.run( now=self.now )
 
     def execute( self, now=None ):
-        """After executing all trades available, rebuild the Reserve order book from the reserves."""
-        for order in super( reserve, self ).execute( now=now ):
-            yield order
+        """After executing each trade available, if we find that our trading.agent was involved in the
+        trade, then rebuild the Reserve order book from the reserves.  This ensures that every order
+        eligible to buy from the reserve trading agent has access to the current reserve tranche(s).
+
+        If running in LIFO mode, *only* the latest tranche is available, therefore, if some/all of
+        the current tranche has been exhausted by a trade, re-run the reserve computation to restock
+        the order book, before the generator computes the next available trade.
+
+        """
         self.run()
+        for trade in super( reserve, self ).execute( now=now ):
+            yield trade
+            if any( order.agent == self for order in trade ):
+                self.run()
 
     def run( self, exch=None, now=None ):
         """Evaluates Currency reserves, and places buy orders (so other agents can sell, Retiring Holo fuel
         for USD$) for each tranche at its original Holo fuel / USD$ price.
 
-        All outstanding orders are closed to begin; only buy orders will exist for this agent at return.
+        All outstanding orders for our reserve agent are closed to begin; only buy orders will exist
+        for this agent at return.
+
         """
         assert exch is None, \
             "A reserve is both a trading.market and an agent; no market need be supplied "
@@ -212,6 +227,8 @@ class reserve( trading.market, trading.agent ):
         self.close( self )
         for price,amount in self.reserves.items():
             self.buy( self, amount=amount, price=price, now=now )
+            if self.LIFO:
+                break
 
     def record( self, order, comment=None ):
         """Adjust reserves by the amount bought/sold, retiring tranches as they are exhausted."""

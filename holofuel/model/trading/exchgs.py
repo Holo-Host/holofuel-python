@@ -35,7 +35,7 @@ import logging
 
 from .. import nan_first, nan_last, timer, non_value
 
-trade_t				= collections.namedtuple( 
+class trade_t( collections.namedtuple( 
     'Trade', [ 
         'security', 
         'price',
@@ -43,8 +43,12 @@ trade_t				= collections.namedtuple(
         'time', 
         'amount', 
         'agent',
-        ] )
-
+    ] )):
+    __slots__			= ()
+    def __str__( self ):
+        return "{:<20s} {:4} {:9.4f} @ {}${:7.4f}".format(
+            str( self.agent ), "buy" if self.amount > 0 else "sell",
+            abs( self.amount ), self.currency, self.price )
 
 prices_t			= collections.namedtuple(
     'Prices', [
@@ -115,9 +119,7 @@ class market( object ):
         open		= list( self.open() )
         biggest		= max( [ abs( order.amount ) for order in open ] if open else [0] ) # python2 compatibility for python3 max( ..., default=0 )
         return '\n'.join(
-            "{:<20s} {:4} {:9.4f} @ {}${:7.4f} {}".format( str( order.agent ),
-                "buy" if order.amount > 0 else "sell", abs( order.amount ),
-                order.currency, order.price, '*' * int( width * abs( order.amount ) // biggest if biggest else 0 ))
+            "{} {}".format( str( order ), '*' * int( width * abs( order.amount ) // biggest if biggest else 0 ))
             for order in open )
 
     def __str__( self ):
@@ -192,24 +194,40 @@ class market( object ):
                 break
         return prices_t( bid, ask, self.last )
 
-    def execute_all( self, now=None, record=True ):
-        """Execute all trades; If appropriate (record is True), we will also execute the order.agent.record( order )."""
-        for order in self.execute( now=now ):
-            if record:
-                order.agent.record( order )
+    def execute_all( self, now=None, record=True, **kwds ):
+        """Execute all trade orders; If appropriate (record is True), we will also record the trade with
+        each agent.
 
-    def execute( self, now=None ):
-        """Yield all possible trading transactions, adjust books.  Not thread-safe.  Performs
-        market-price orders first, sorted by age.  Then, limit-price orders.  Remember that all
-        amounts in the selling book are -'ve!
+        Returns number of trades executed.
+        """
+        trades_beg		= self.transaction
+        for trade in self.execute( now=now, **kwds ):
+            if record:
+                for order in trade:
+                    order.agent.record( order )
+        return self.transaction - trades_beg
+
+    def trade_possible( self, bid=-1, ask=0 ):
+        return ( bid < 0 and ask >= 0						# bid/ask indices are valid
+                and bid >= -len( self.buying )
+                and ask <   len( self.selling )
+                and ( non_value( self.selling[ask].price )			# either are market trades
+                      or non_value( self.buying[bid].price )
+                      or self.selling[ask].price <= self.buying[bid].price ))   # or prices are overlapping
+
+    def execute( self, now=None, bid=-1, ask=0 ):
+        """Yield all possible (buyer,seller) trading transactions, at the given bid/ask indices, and
+        adjust books.  Not thread-safe.  Performs market-price orders first, sorted by age.  Then,
+        limit-price orders.  Remember that all amounts in the selling book are -'ve!
         
         The caller must record the trades with each trade's agent, as appropriate.  Normally, this
         would be something like (assuming 'mkt' is a market object, and the trade.agent supplied has
         a .record method which takes a trade):
         
-            for order in mkt.execute():
-                order.agent.record( order )
-                # ... do other stuff with the order
+            for trade in mkt.execute():
+                for order in trade:
+                    order.agent.record( order )
+                # ... do other stuff with trade
 
         Largely ported from fms/fms/markets/continuousorderdriven.py, with handling for market-price
         and limit-price bid/ask added.
@@ -220,37 +238,39 @@ class market( object ):
         there are no price limit asks in the market, as this would allow a buyer to set his own
         price in a thin market.
 
+        A derived class may apply other means to determine the best appropriate bid/ask index to
+        execute trades from (eg. the highest (latest in list) compatible buyer, and lowest (earliest
+        in list) compatible seller.
+
         """
         if now is None:
             now			= timer()
-        while ( self.buying and self.selling 
-                and ( non_value( self.selling[0].price )			# either are market trades
-                      or non_value( self.buying[-1].price )
-                      or self.selling[0].price <= self.buying[-1].price )):	# or, limit prices overlap
+        while self.trade_possible( bid=bid, ask=ask ):
             # Trades available, and lowest seller at or below greatest buyer (or one or both is None
             # or NaN, meaning market price).  If both buyer and seller are trading with market-price
             # orders, then the oldest order gets the advantage; market buyers pay highest available
             # seller limit, market sellers get lowest available buyer limit.  If no limit-price
             # orders exist, then no trade can be made on current prices_t(there is no market); use the
             # last order traded, if any.
-            amount 		= min( self.buying[-1].amount, -self.selling[0].amount )
+            amount 		= min( self.buying[bid].amount, -self.selling[ask].amount )
 
-            if self.buying[-1].time < self.selling[0].time:
+            if self.buying[bid].time < self.selling[ask].time:
                 # Buyer placed trade before seller; buyer gets better price (seller's ask limit price)
-                price 		= self.selling[0].price
+                price 		= self.selling[ask].price
                 if non_value( price ):
                     # Except if it's a market-price ask; then buyer pays his own bid limit price.
                     # If both are market price, the buyer will still get the priority; the best sell
                     # (ask) limit price.
-                    price	= self.buying[-1].price
+                    price	= self.buying[bid].price
                     search	= self.selling
             else:
                 # Seller placed trade at/after buyer; seller gets better price (buyer's bid limit price)
-                price 		= self.buying[-1].price
+                price 		= self.buying[bid].price
                 if non_value( price ):
-                    # Except if it's a market-price bid; then seller pays his own ask price.  If both are market,
-                    # then seller still gets priority; he'll get the best available buy (bid) limit price.
-                    price	= self.selling[0].price
+                    # Except if it's a market-price bid; then seller gets his own ask price.  If
+                    # both are market, then seller still gets priority; he'll get the best available
+                    # buy (bid) limit price.
+                    price	= self.selling[ask].price
                     search	= reversed( self.buying )
             if non_value( price ):
                 # Both are market-price orders; search order gives advantage to the oldest trade
@@ -264,25 +284,100 @@ class market( object ):
                     break
                 price		= self.last.price
 
-            logging.info( "market %s at %7.2f" % ( self.name, price ))
             self.transaction   += 1
-            buy = self.last 	= trade_t( self.name, price, self.currency, now,  amount, self.buying[-1].agent )
-            sell		= trade_t( self.name, price, self.currency, now, -amount, self.selling[0].agent )
+            buy = self.last 	= trade_t( self.name, price, self.currency, now,  amount, self.buying[bid].agent )
+            sell		= trade_t( self.name, price, self.currency, now, -amount, self.selling[ask].agent )
 
-            if amount == self.buying[-1].amount:
-                del self.buying[-1]
+            if amount == self.buying[bid].amount:
+                del self.buying[bid]
             else:
-                self.buying[-1] = trade_t( self.buying[-1].security, self.buying[-1].price, self.buying[-1].currency,
-                                           self.buying[-1].time, self.buying[-1].amount - amount,
-                                           self.buying[-1].agent )
-            if amount == -self.selling[0].amount:
-                del self.selling[0]
+                self.buying[bid] = trade_t( self.buying[bid].security, self.buying[bid].price, self.buying[bid].currency,
+                                           self.buying[bid].time, self.buying[bid].amount - amount,
+                                           self.buying[bid].agent )
+            if amount == -self.selling[ask].amount:
+                del self.selling[ask]
             else:
-                self.selling[0] = trade_t( self.selling[0].security, self.selling[0].price, self.selling[0].currency,
-                                           self.selling[0].time, self.selling[0].amount + amount,
-                                           self.selling[0].agent )
-            yield buy
-            yield sell
+                self.selling[ask] = trade_t( self.selling[ask].security, self.selling[ask].price, self.selling[ask].currency,
+                                           self.selling[ask].time, self.selling[ask].amount + amount,
+                                           self.selling[ask].agent )
+            yield buy,sell
+
+
+class market_selective( market ):
+    """Only allow trades to execute between agreeable agents.  When used with custom agents with
+    sells_to/buys_from methods that reject or accept other agents based on some criteria, will only
+    allow trades to occur between mutually compatible agents.
+
+    """
+
+    def agents_compatible( self, buyer, seller ):
+        return seller.sells_to( buyer ) and buyer.buys_from( seller )
+
+    def execute( self, now=None, bid=-1, ask=0 ):
+        """Step bid down and ask upward, 'til we exhaust the order book, or run out of willing participants.
+        This is useful in cases where not all market participants can/will deal with each-other.
+
+        Each time we execute one trade, break out and re-walk the order book, since the book may
+        have been changed.
+
+            order book:                       holdings:
+            buy    # $    | sell   # $        who #   @ $
+            ---- --- ---- | ---- --- ----     --- ----  ----
+            A    175 1.44 | R    100 1.38     R   100 @ 1.38  100 @ 1.39  100 @ 1.40
+            B(R) 200 1.43 | C    200 1.43     A   0
+                                              B   0
+                                              C   200 @ 1.43
+
+        For example, if agents A and C are not eligible to deal with R, but B is, then when this
+        order book is executed, A will buy 75 at 1.43 (no eligible to buy from R):
+
+            order book:                       holdings:                                
+            buy    # $    | sell   # $        who #   @ $                              
+            ---- --- ---- | ---- --- ----     --- ----  ----                           
+            A    75  1.44 | R    100 1.38     R   100 @ 1.38  100 @ 1.39  100 @ 1.40
+            B(R) 200 1.43 | C    125 1.43     A    75 @ 1.43                                   
+                                              B   0                                    
+                                              C   200 @ 1.43
+
+        Then, B will buy 100 from R at 1.38 and 100 from C at 1.43
+
+            order book:                       holdings:                                
+            buy    # $    | sell   # $        who #   @ $                              
+            ---- --- ---- | ---- --- ----     --- ----  ----                           
+            B(R) 200 1.43 | R    100 1.38     R   100 @ 1.38  100 @ 1.39  100 @ 1.40
+                          | C    125 1.43     A    75 @ 1.43                                   
+                                              B   100 @ 1.38  100 @ 1.43
+                                              C   200 @ 1.43
+
+        After each trade, the order book has changed (the user of this generator may be modifying
+        the participants in the order book, in addition to the changes in the existing orders due to
+        each buy/sell processed!)
+
+        Therefore, after each order, collect the bidder/asker agents that could possibly trade, and
+        evaluate any new participants against all other potential traders.  If any buyers or sellers
+        are trading at "market" (no limit price), then all of the compatible counterparties are
+        potentially in play!
+
+        """
+        assert bid == -1 and ask == 0, \
+            "market_selective computes possible trade agents internally; invalid non-default bid/ask == {bid}/{ask}".format( bid=bid, ask=ask )
+
+        transaction			= self.transaction
+        executed			= 0
+        while self.transaction == transaction + executed \
+              and self.trade_possible( bid=bid, ask=ask ): # while there are still orders potentially possible
+            # Seek down the order book looking for the first compatible trading partners
+            bidnow,asknow		= bid,ask
+            while self.trade_possible( bid=bidnow, ask=asknow ) \
+                  and not self.agents_compatible( buyer=self.buying[bidnow].agent, seller=self.selling[asknow].agent ):
+                bidnow,asknow		= bidnow-1,asknow if bidnow+asknow else bidnow,asknow+1
+            # Could be no trades possible between consenting parties...  Yield one order, then
+            # re-check, because the order book may be altered between each order!  If no trades
+            # executed, outer loop will cease.
+            for trade in super( market_selective, self ).execute( now, bid=bidnow, ask=asknow ):
+                yield trade
+                executed	       += 1
+                break
 
 
 class exchange( object ):
@@ -294,11 +389,12 @@ class exchange( object ):
     in the exchange's currency.
 
     """
-    def __init__( self, name, currency=None, **kwds ):
+    def __init__( self, name, currency=None, market_class=None, **kwds ):
         super( exchange, self ).__init__( **kwds )
         self.name	        = name
         self.currency		= currency or ( name.split('/',1)[1] if '/' in name else 'USD' )
         self.markets		= {}
+        self.market_class	= market_class or market
 
     def __repr__( self ):
         return "\n".join( (repr( m ) for m in self.markets.values()))
@@ -322,12 +418,12 @@ class exchange( object ):
 
     def buy( self, security, agent, amount, price, now=None, update=True ):
         if security not in self.markets:
-            self.markets[security] = market( '/'.join(( security, self.currency )), currency=self.currency )
+            self.markets[security] = self.market_class( '/'.join(( security, self.currency )), currency=self.currency )
         self.markets[security].buy( agent, amount, price, now=now, update=update )
 
     def sell( self, security, agent, amount, price, now=None, update=True ):
         if security not in self.markets:
-            self.markets[security] = market( '/'.join(( security, self.currency )), currency=self.currency )
+            self.markets[security] = self.market_class( '/'.join(( security, self.currency )), currency=self.currency )
         self.markets[security].buy( agent, amount, price, now=now, update=update )
 
     def enter( self, order, update=True ):
@@ -340,16 +436,16 @@ class exchange( object ):
             assert order.currency == self.currency, \
                 "Unable to enter orders for {} in {}$; only {}$ trades supported".format(
                     order.security, order.currency, self.currency )
-            self.markets[order.security] = market( '/'.join(( order.security, order.currency )), currency=order.currency )
+            self.markets[order.security] = self.market_class( '/'.join(( order.security, order.currency )), currency=order.currency )
         self.markets[order.security].enter( order, update=update )
 
-    def execute( self, now=None ):
+    def execute( self, now=None, **kwds ):
         """
         Invoke .execute on each market in the exchange, and yield all the resultant trades.
         """
-        for market in self.markets.values():
-            for order in market.execute( now=now ):
-                yield order
+        for mkt in self.markets.values():
+            for trade in mkt.execute( now=now, **kwds ):
+                yield trade
 
     def price( self, security ):
         if security in self.markets:

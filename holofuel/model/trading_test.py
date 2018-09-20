@@ -28,8 +28,9 @@ def test_market_simple():
 
     print( "Executing:" )
     trades = list( m.execute( now=6. ))
-    assert len( trades ) == 6
-    for order in trades:
+    assert len( trades ) == 3
+    for trade in trades:
+      for order in trade:
         print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
         if order.agent == "agent D":
             assert near( 4.01, order.price )
@@ -73,8 +74,9 @@ def test_market_simple():
     m.buy(  "agent G", 20, None, now=7. )
     print( "Executing market-limit buy:" )
     trades = list( m.execute( now=7. ))
-    assert len( trades ) == 2
-    for order in trades:
+    assert len( trades ) == 1
+    for trade in trades:
+      for order in trade:
         print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
         if order.agent == "agent G" or order.agent == "agent D":
             assert near( 4.01, order.price )
@@ -92,8 +94,9 @@ def test_market_simple():
     m.sell( "agent H", 2, None, now=8. )
     print( "Executing market-limit sell:" )
     trades = list( m.execute( now=8. ))
-    assert len( trades ) == 2
-    for order in trades:
+    assert len( trades ) == 1
+    for trade in trades:
+      for order in trade:
         print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
         if order.agent == "agent H" or order.agent == "agent F":
             assert near( 3.99, order.price )
@@ -105,8 +108,9 @@ def test_market_simple():
     m.sell( "agent J", 3, None, now=10. )
     print( "Executing market-limit buy/sell (buyer wins; gets best seller limit price):" )
     trades = list( m.execute( now=10. ))
-    assert len( trades ) == 2
-    for order in trades:
+    assert len( trades ) == 1
+    for trade in trades:
+      for order in trade:
         print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
         if order.agent == "agent I" or order.agent == "agent J":
             assert near( 4.01, order.price )
@@ -118,8 +122,9 @@ def test_market_simple():
     m.buy(  "agent L", 3, None, now=12. )
     print( "Executing market-limit buy/sell (seller wins; gets best buyer limit price):" )
     trades = list( m.execute( now=12. ))
-    assert len( trades ) == 2
-    for order in trades:
+    assert len( trades ) == 1
+    for trade in trades:
+      for order in trade:
         print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
         if order.agent == "agent K" or order.agent == "agent L":
             assert near( 3.99, order.price )
@@ -135,8 +140,9 @@ def test_market_simple():
     m.buy(  "agent L", 3, None, now=14. )
     print( "Executing market-limit buy/sell (no limit prices; uses last trade price):" )
     trades = list( m.execute( now=14. ))
-    assert len( trades ) == 2
-    for order in trades:
+    assert len( trades ) == 1
+    for trade in trades:
+      for order in trade:
         print( "%10s: %5d %10s @ %7.2f" % ( order.agent, order.amount, order.security, order.price ))
         if order.agent == "agent K" or order.agent == "agent L":
             assert near( 3.99, order.price )
@@ -153,8 +159,9 @@ def test_market_agent():
     # An earlier (or simultaneous) seller sets the price
     m.sell( b, 100, 10., now=1.)
     m.buy(  a,  90, 11., now=1.)
-    for order in m.execute():
-        order.agent.record( order )
+    for trade in m.execute():
+        for order in trade:
+            order.agent.record( order )
     
     assert near( 10., a.balance )
     assert near( 990., b.balance )
@@ -169,8 +176,9 @@ def test_market_agent():
     # An earlier buyer sets the price
     m.sell( b, 100, 10., now=1.)
     m.buy(  a,  90, 11., now=0.)
-    for order in m.execute():
-        order.agent.record( order )
+    for trade in m.execute():
+        for order in trade:
+            order.agent.record( order )
     
     assert near( 100., a.balance )
     assert near( 900., b.balance )
@@ -203,6 +211,6 @@ def test_exchange():
     for t in range(0,30):
         for a in actors:
             a.run( GSE, now=t )
-        for order in GSE.execute( now=t ):
+        for order in ( trade for trade in GSE.execute( now=t )):
             order.agent.record( order )
         logging.info( "GSE after %d:\n%s" % ( t , repr( GSE )))

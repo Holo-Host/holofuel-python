@@ -81,6 +81,17 @@ class agent( object ):
     def __str__( self ):
         return self.identity
 
+    # 
+    # sells_to/buys_from -- Used by market_selective to pair agreeable buyers/sellers
+    # 
+    def sells_to( self, another ):
+        """This actor will sell to another actor."""
+        return True
+
+    def buys_from( self, another ):
+        """This actor will buy from another actor"""
+        return True
+    
     @property
     def balance( self ):
         """self.balance -- access/adjust balance in preferred currency.  Will return

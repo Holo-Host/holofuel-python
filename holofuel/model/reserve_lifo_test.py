@@ -3,7 +3,7 @@ import random
 import math
 
 from . import trading, near
-from .trading import need_t, engine_status, engine, world, month, week, day, hour
+from .trading import actor, need_t, engine_status, engine, world, month, week, day, hour
 from .reserve_lifo import reserve, reserve_issuing
 
 def test_reserve_simple():
@@ -19,11 +19,12 @@ def test_reserve_simple():
     Holofuel_USD.sell( a1, 100, .0007 )
     print( "assets:   {!r}".format( Holofuel_USD.assets ))
     print( "reserves: {!r}".format( Holofuel_USD.reserves ))
-    print( "{!r}".format( Holofuel_USD ))
-    Holofuel_USD.execute_all()
-    print( "assets: {!r}".format( Holofuel_USD.assets ))
-    print( "{!r}".format( Holofuel_USD ))
+    assert Holofuel_USD.execute_all() == 1
+    Holofuel_USD.print_full_book()
+    print( "assets:   {!r}".format( Holofuel_USD.assets ))
+    print( "reserves: {!r}".format( Holofuel_USD.reserves ))
     bid,ask,last		= Holofuel_USD.price()
+    print( "bid:      {!r}".format( bid ))
     assert bid is None
     assert not Holofuel_USD.reserves
 
@@ -33,7 +34,6 @@ def test_reserve_simple():
     Holofuel_USD.execute_all()
     print( "assets:   {!r}".format( Holofuel_USD.assets ))
     print( "reserves: {!r}".format( Holofuel_USD.reserves ))
-    print( "{!r}".format( Holofuel_USD ))
     bid,ask,last		= Holofuel_USD.price()
     assert near( bid.price, .001 )
 
@@ -85,3 +85,31 @@ def test_reserve_issuing():
         for sec,amt in a.assets.items():
             print( "{:15} Owns {:9.4f} {}".format( str( a ), amt, sec ))
         assert near( amt, holo_need_weekly * duration / week )
+
+
+def test_reserve_issuing_selective():
+    """Test the concept of a reserve that allows any actor to buy/sell, but only redeems (buys) Holofuel
+    in exchange for reserve funds to actors which are hosts.
+
+    """
+
+    class host( actor ):
+        pass
+
+    class reserve_for_hosts( reserve ):
+        """Our reserve's trading.agent will only allow itself to buy Holofuel from a Holo 'host'"""
+        def buys_from( self, another ):
+            return isinstance( another, host )
+
+
+    A			= actor()
+    B			= host()
+
+    R			= reserve_for_hosts( name="HoloFuel/USD", reserves={ .138: 100, .139: 100, .140: 100 } )
+
+    # Lets ensure that only a host can buy Holo Fuel for cash, and access the reserve funds
+    R.sell( B, 3 )
+    assert R.execute_all() == 1
+    assert B.assets[R.name] == -3
+    assert B.currency == 'USD'
+    assert near( B.balance*1, 3*.138 )
