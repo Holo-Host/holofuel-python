@@ -18,6 +18,8 @@ setup(
         "holofuel",
         "holofuel/model",
         "holofuel/model/trading",
+        "holofuel/model/trading/engine",
+        "holofuel/model/trading/worlds",
         "holofuel/model/control",
     ],
     include_package_data	= True,
