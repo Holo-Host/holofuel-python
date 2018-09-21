@@ -8,7 +8,7 @@ from .reserve_lifo import reserve, reserve_issuing
 
 def test_reserve_simple():
     logging.getLogger().setLevel( logging.INFO )
-    Holofuel_USD		= reserve( name="HoloFuel/USD", reserves={ .0007: 100 } )
+    Holofuel_USD		= reserve( name="HoloFuel/USD", reserves={0: { .0007: 100 }} )
     Holofuel_USD.print_full_book()
     bid,ask,last		= Holofuel_USD.price()
     assert last is None
@@ -19,7 +19,7 @@ def test_reserve_simple():
     Holofuel_USD.sell( a1, 100, .0007 )
     print( "assets:   {!r}".format( Holofuel_USD.assets ))
     print( "reserves: {!r}".format( Holofuel_USD.reserves ))
-    assert Holofuel_USD.execute_all() == 1
+    assert len( Holofuel_USD.execute_all() ) == 1
     Holofuel_USD.print_full_book()
     print( "assets:   {!r}".format( Holofuel_USD.assets ))
     print( "reserves: {!r}".format( Holofuel_USD.reserves ))
@@ -43,7 +43,8 @@ def test_reserve_issuing():
     supply_period		= 1 * day
     supply_book_value		= 1.00
     Holofuel_USD		= reserve_issuing( name="HoloFuel/USD", supply_book_value=supply_book_value,
-                                                   supply_period=supply_period, supply_available=supply_available )
+                                                   supply_period=supply_period, supply_available=supply_available,
+                                                   LIFO=True )
     print( "assets:   {!r}".format( Holofuel_USD.assets ))
     print( "reserves: {!r}".format( Holofuel_USD.reserves ))
     print( "{!r}".format( Holofuel_USD ))
@@ -60,7 +61,7 @@ def test_reserve_issuing():
             currency	= Holofuel_USD.currency,
             balance	= 0.,
             minimum	= -math.inf,
-            quanta	= hour,
+            quanta	= 6*hour,
             needs	= [ need_t( 1, None, 'HoloFuel', week, holo_need_weekly ) ] )
         for n in range( agent_count )
     ]
@@ -101,15 +102,46 @@ def test_reserve_issuing_selective():
         def buys_from( self, another ):
             return isinstance( another, host )
 
-
-    A			= actor()
-    B			= host()
-
-    R			= reserve_for_hosts( name="HoloFuel/USD", reserves={ .138: 100, .139: 100, .140: 100 } )
+    # 3 reserve tranches
+    A				= actor()
+    B				= host()
+    R				= reserve_for_hosts( name="HoloFuel/USD",
+                                                     reserves={ 0: { .138: 100 }, 1: {.140: 100 }, 2: { .139: 100 } } )
 
     # Lets ensure that only a host can buy Holo Fuel for cash, and access the reserve funds
-    R.sell( B, 3 )
-    assert R.execute_all() == 1
+    R.sell( B, 3 ) # A market trade; will get the best priced buyer
+    print( R.format_book() )
+    assert len( R.buying ) == 3 
+    trades			= R.execute_all()
+    assert len( trades ) == 1
+    assert near( trades[0][0].price, .140 )
     assert B.assets[R.name] == -3
     assert B.currency == 'USD'
-    assert near( B.balance*1, 3*.138 )
+    assert near( B.balance*1, 3*.140 )
+
+    # Try again, LIFO
+    R.LIFO			= True
+    R.run()
+    R.sell( B, 9 ) # A market trade; will get the best priced buyer
+    print( R.format_book() )
+    assert len( R.buying ) == 1
+    assert len( R.selling ) == 1
+    trades			= R.execute_all()
+    assert len( trades ) == 1
+    assert near( trades[0][0].price, .139 ) # Newest reserve tranche is not highest priced
+    assert B.assets[R.name] == -12
+    assert B.currency == 'USD'
+    assert near( B.balance*1, 3*.140 + 9*.139 )
+    
+    # Make sure a non-host cannot access reserves
+    R.sell( A, 1 )
+    R.sell( B, 1 )
+    print( R.format_book() )
+    assert len( R.buying ) == 1
+    assert len( R.selling ) == 2
+    trades			= R.execute_all()
+    assert len( trades ) == 1
+    assert not A.assets
+    assert B.assets[R.name] == -13
+    
+    

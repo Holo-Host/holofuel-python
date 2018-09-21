@@ -6,7 +6,7 @@
 PY2=python
 PY3=python3
 
-PYTESTOPTS=-v # --capture=no
+PYTESTOPTS=-v # --log-level=INFO --capture=no --fulltrace
 
 PY2TEST=$(PY2) -m pytest $(PYTESTOPTS)
 PY3TEST=$(PY3) -m pytest $(PYTESTOPTS)

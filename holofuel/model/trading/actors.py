@@ -84,13 +84,16 @@ class agent( object ):
     # 
     # sells_to/buys_from -- Used by market_selective to pair agreeable buyers/sellers
     # 
+    #     The most basic rule that exchanges might want to follow is that agents don't want to
+    # exchange with themselves.
+    # 
     def sells_to( self, another ):
         """This actor will sell to another actor."""
-        return True
+        return another is not self
 
     def buys_from( self, another ):
         """This actor will buy from another actor"""
-        return True
+        return another is not self
     
     @property
     def balance( self ):
@@ -241,7 +244,7 @@ class actor( agent ):
         """
         if not super( actor, self ).run( exch=exch, now=now ):
             return False
-        self.acquire_needs( exch )
+        self.acquire_needs( exch ) # closes any existing trades in any securities in needs
         self.cover_balance( exch )
         self.fix_portfolio( exch )
         return True
@@ -307,8 +310,7 @@ class actor( agent ):
                         factor, price if price else math.nan ))
                 # Enter the trade for the required item, updating existing orders
                 exch.enter( trade_t( security=n.security, price=offer, currency=exch.currency,
-                                           time=self.now, amount=short,
-                                           agent=self ),
+                                     time=self.now, amount=short, agent=self ),
                             update=True )
         # Finally, update our needs w/ the refreshed list computed (new deadlines, etc.)
         self.needs		= needs
@@ -324,7 +326,7 @@ class actor( agent ):
         """
         value			= 0.
         buying			= []
-        for order in exch.open( self ):
+        for order in exch.orders( self ):
             value	       += order.amount * order.price
             if order.amount > 0:
                 buying.append( order.security )
@@ -376,15 +378,14 @@ class actor( agent ):
             # Sell some of the securities at current market rate (no price) we
             # have the most excess value of, 'til we have enough.  We'll have to
             # guess approximately how many units, because we don't know exactly
-            # what the sale price will be.
+            # what the sale price will be.  Replace any
             overage 		= (self.assets[sec] - self.target.get( sec, 0 ))
             amount 		= min( value // excess[sec] + 1, overage )
             estimate 		= amount * excess[sec] / overage   # units * $/unit
             print( "Sell %d of %d excess %s (worth ~%7.2f) for about %7.2f" % (
                 amount, overage, sec, val, estimate  ))
             exch.enter( trade_t( security=sec, price=math.nan, currency=exch.currency,
-                                       time=self.now, amount=-amount,
-                                       agent=self ),
+                                 time=self.now, amount=-amount, agent=self ),
                         update=True )
             value 	       -= estimate
             if value <= 0:
@@ -397,7 +398,10 @@ class actor_inflation_pump( actor ):
     """Consults credit.inflation to decide buy/sell decisions, and tries to adjust
     holdings to shrink during inflation and grow during deflation.
 
-    TODO: Must 
+    TODO: Must respect self.dt and only sell securities at a certain rate; we want to raise funds
+    more quickly when inflation is higher.  We would need to store information about how much we've
+    divested per period of time, eg. an exponential moving average.
+
     """
     def __init__( self, identity=None, credit=None, **kwds ):
         super( actor_inflation_pump, self ).__init__( identity=identity, **kwds )
@@ -429,7 +433,7 @@ class actor_inflation_pump( actor ):
         print( repr( holdings.items() ))
         for sec,val in sorted( holdings.items(), key=lambda sv: -sv[1], reverse=True ):
             print( "fix: %s: holds %s" % ( sec, val ))
-            amount 		= 1
+            amount 		= 1 # TODO: wrong. exponential moving average vs. target
             if self.credit.inflation < 1.0:
                 # Prices too low; buy at market!
                 exch.enter( trade_t( security=sec, price=math.nan, currency=exch.currency,

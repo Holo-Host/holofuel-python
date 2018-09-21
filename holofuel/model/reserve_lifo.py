@@ -1,6 +1,7 @@
 import logging
 
 from . import trading
+from . import near
 
 class ReserveAccount:
     """
@@ -169,10 +170,10 @@ class ReserveAccount:
             print("Buy-Back: {} Fuel @ Price of {:.5f} {}".format(self.reserves[ii][1], self.reserves[ii][0], self.currency_pair))
 
 
-class reserve( trading.market_selective, trading.agent ):
+class reserve( trading.market, trading.agent ):
     """A simple Reserve market (and agent) that just posts sell/asks, at the price it paid/bid for the
-    asset.  Reserves are ordered by price, not by order bought/sold, unless 'LIFO' is True; then,
-    only the oldest tranche is listed for redemption.
+    asset.  Reserves are offered by price, not by order bought/sold, unless 'LIFO' is True; then,
+    only the oldest tranche is listed for redemption until it is retired, then the next is offered.
 
     While this market has an agent that provides liquidity in the form of Retiring Holo Fuel via
     access to Reserves tranches at their original price, and perhaps Issuing Holo Fuel at some
@@ -193,7 +194,7 @@ class reserve( trading.market_selective, trading.agent ):
         if not identity: # The Reserve's Market Maker agent
             identity		= '{} Reserve'.format( name ) # Eg. HoloFuel/USD Reserve
         super( reserve, self ).__init__( name=name, identity=identity, **kwds )
-        self.reserves	= dict( reserves ) if reserves else {} # { <price>: <amount>, ... }
+        self.reserves	= dict( reserves ) if reserves else {} # { <time>: { <price>: <amount>, ... }, ...}
         self.LIFO	= True if LIFO else False
         self.run( now=self.now )
 
@@ -220,25 +221,53 @@ class reserve( trading.market_selective, trading.agent ):
         All outstanding orders for our reserve agent are closed to begin; only buy orders will exist
         for this agent at return.
 
+        The prices from the newest tranche are bought first.  If multiple trades are 
+
         """
         assert exch is None, \
             "A reserve is both a trading.market and an agent; no market need be supplied "
         super( reserve, self ).run( exch=self, now=now )
-        self.close( self )
-        for price,amount in self.reserves.items():
-            self.buy( self, amount=amount, price=price, now=now )
+        self.close( self ) # close all open trades
+        # For LIFO, newest order placed first.
+        for timestamp in sorted( self.reserves.keys(), reverse=True ):
+            for price in sorted( self.reserves[timestamp].keys() ):
+                amount		= self.reserves[timestamp][price]
+                # Place orders at original tranche timestamp? Tranches w/ same price will be retired
+                # oldest to newest.
+                self.buy( self, amount=amount, price=price, now=timestamp )
+                logging.info( "Issuing reserve tranche from time %16s: %5d %-20s @ %7.4f", timestamp, amount, self.name, price )
             if self.LIFO:
-                break
+                return # If LIFO, only a single (the newest) tranche is placed at a time
 
     def record( self, order, comment=None ):
-        """Adjust reserves by the amount bought/sold, retiring tranches as they are exhausted."""
+        """Adjust reserves by the amount bought/sold, retiring tranches as they are exhausted.  For reserve
+        assets redeemed for reserve currency, find the oldest matching tranche, and redeem the
+        amount of currency from it.  If the reserve asset is issued for reserve currency, create a
+        new tranche with the timestamp of the order, and add the currency to it.
+
+        """
         super( reserve, self ).record( order=order, comment=comment )
-        self.reserves.setdefault( order.price, 0 )
-        self.reserves[order.price] -= order.amount
-        if self.reserves[order.price] == 0:
-            logging.info( "{:<20} emptied Reserve tranche @ {}${:9.4f}".format(
-                str( order.agent ), order.currency, order.price ))
-            self.reserves.pop( order.price )
+        if order.amount < 0:
+            # Sold/issued reserve asset; create or add to tranche w/ order time.
+            tranche		= self.reserves.setdefault( order.time, {} )
+            tranche.setdefault( order.price, 0 )
+            tranche[order.price]-= order.amount
+            return
+
+        # Redeemed reserve asset; retire from oldest tranche w/ a matching price.
+        for timestamp in sorted( self.reserves.keys() ):
+            tranche		= self.reserves[timestamp]
+            if order.price in tranche:
+                tranche[order.price] -= order.amount
+                if near( tranche[order.price], 0 ):
+                    logging.info( "{:<20} emptied Reserve tranche @ {}${:9.4f}".format(
+                        str( order.agent ), order.currency, order.price ))
+                    tranche.pop( order.price )
+                    if not tranche:
+                        self.reserves.pop( timestamp )
+                return
+        # No matching tranche?  Not cool
+        raise runtimeError( "%s has no reserves tranche matching order price %s: %r", self, order.price, self.reserves )
 
     def print_full_book( self, width=40 ):
         """Print buy/sell order book w/ incl. depth chart."""
