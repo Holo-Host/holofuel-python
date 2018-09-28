@@ -71,8 +71,9 @@ def test_reserve_issuing():
     duration			= 4 * week
     wld				= world( duration=duration )
 
-    class eng_sts( engine_status, engine ):
+    class eng_sts( engine_status ):
         def status( self, now=None ): # At exit, now == None
+            super( eng_sts, self ).status( now=now )
             print( "%s Orders:\n%s" % (
                 "Exit" if now is None else self.world.format_now( now ),
                 self.exchange.format_book() ))

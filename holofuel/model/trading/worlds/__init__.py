@@ -38,8 +38,8 @@ class world( object ):
         self.reset()
 
     def __str__( self ):
-        return "World starting @ {} w/ duration {}, quanta {}".format(
-            self.start, self.duration, self.quanta )
+        return "World starting @ {} w/ duration {}, quanta {}: {}".format(
+            self.start, self.duration, self.quanta, self.now )
 
     @property
     def done( self ):

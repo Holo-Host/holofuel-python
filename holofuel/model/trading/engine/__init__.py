@@ -50,8 +50,8 @@ class engine( object ):
             self.cycle( now )
 
 
-class engine_status( object ):
-    """A mixin for an engine that logs a status on some interval (default: daily), eg.
+class engine_status( engine ):
+    """An engine that logs a status on some interval (default: daily), eg.
 
         class my_engine( engine_status, engine ):
             pass
@@ -77,8 +77,8 @@ class engine_status( object ):
                       "Exit" if now is None else self.world.format_now( now ),
                       self.exchange.format_book() )
 
-    def cycle( self, now ):
-        super( engine_status, self ).cycle( now )
+    def cycle( self, now, **kwds ):
+        super( engine_status, self ).cycle( now=now, **kwds )
         pernow			= int( now // self.status_period )
         if pernow != self.pernum:
             self.pernum		= pernow
