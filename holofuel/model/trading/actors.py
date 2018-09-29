@@ -34,7 +34,7 @@ import logging
 import math
 import random
 
-from .. import timer, scale, near
+from .. import timer, scale, near, non_value
 
 from .exchgs import * # market, ...
 from .consts import * # day, ...
@@ -216,7 +216,7 @@ class actor( agent ):
         self.target		= {}			# { 'something': 350, ...}
         if target:
             self.target.update( target )
-        self.needs		= needs			# [ need_t(...), ... ]
+        self.needs		= needs	or []		# [ need_t(...), ... ]
         if balance is not None:
             self.balance	= balance		# Credit balance (must specify currency to set)
         self.minimum		= minimum		#  and target minimum
@@ -291,14 +291,23 @@ class actor( agent ):
                 logging.info( "%s has full target %5d of %s: %5d/%5d" % (
                     self, n.amount, n.security, holds, wants ))
                 exch.close( agent=self, security=n.security )
+            elif wants > holds:
+                # Urgent! We don't even have our basic target! Enter a market trade for the required
+                # amount;  Ignore needs for now.
+                logging.info(
+                    "%15s NEEDS %d %s; bidding (market)" % (
+                        self, wants - holds, n.security ))
+                exch.enter( trade_t( security=n.security, price=None, currency=exch.currency,
+                                     time=self.now, amount=wants - holds, agent=self ),
+                            update=True )
             else:
-                # Hmm. We're short.  Adjust our offered purchase price based on
-                # how much of the need's cycle remains.  If the deadline passes,
-                # the difference will go -'ve, and the result will be > 1.  If
-                # the deadline is a full cycle (or more) away, the difference
-                # will go to 1. (or more), and the result will be < 0.  Convert
-                # this into a price factor, ranging from ~10% under to ~5% over
-                # current market asking price (greatest of bid, ask and latest).
+                # We're short of what we need for our upcoming deadline, but we have our target.
+                # Adjust our offered purchase price based on how much of the need's cycle remains.
+                # If the deadline passes, the difference will go -'ve, and the result will be > 1.
+                # If the deadline is a full cycle (or more) away, the difference will go to 1. (or
+                # more), and the result will be < 0.  Convert this into a price factor, ranging from
+                # ~10% under to ~5% over current market asking price (greatest of bid, ask and
+                # latest).
                 proportion	= 1. - ( n.deadline - self.now ) / n.cycle
                 factor		= scale( proportion, (0., 1.), (0.90, 1.05))
                 price_tuple	= exch.price( n.security ) # bid,ask,last
@@ -327,7 +336,12 @@ class actor( agent ):
         value			= 0.
         buying			= []
         for order in exch.orders( self ):
-            value	       += order.amount * order.price
+            price		= order.price
+            if non_value( price ):
+                # Guess; see if exchange has a price
+                price_tuple	= exch.price( order.security ) # bid,ask,last
+                price		= max( 0 if p is None else p.price for p in price_tuple )
+            value	       += order.amount * price
             if order.amount > 0:
                 buying.append( order.security )
         # eg.       0   - 100   < -75  --> $ 25 over limit
