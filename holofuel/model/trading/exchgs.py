@@ -152,12 +152,16 @@ class market( object ):
         self.buying  = [ order for order in self.buying  if order.agent is not agent ]
         self.selling = [ order for order in self.selling if order.agent is not agent ]
 
-    def buy( self, agent, amount, price=None, now=None, update=None ):
+    def buy( self, agent, amount, price=None, security=None, now=None, update=None ):
+        assert not security or security == self.name, \
+            "Attempted to buy {} on {} market".format( security, str( self ))
         if now is None:
             now 		= timer()
         self.enter( trade_t( self.name, price, self.currency, now, amount, agent ), update=update )
 
-    def sell( self, agent, amount, price=None, now=None, update=None ):
+    def sell( self, agent, amount, price=None, security=None, now=None, update=None ):
+        assert not security or security == self.name, \
+            "Attempted to sell {} on {} market".format( security, str( self ))
         if now is None:
             now 		= timer()
         self.enter( trade_t( self.name, price, self.currency, now, -amount, agent ), update=update )
@@ -319,7 +323,6 @@ class market( object ):
         potentially in play!
 
         """
-        transaction			= self.transaction
         done				= False
         while ( not done and self.trade_possible( bid=bid, ask=ask )): 	# while there are still orders potentially possible
             done			= True
@@ -463,15 +466,17 @@ class exchange( object ):
             for ord in mkt.orders( agent ):
                 yield ord
 
-    def buy( self, security, agent, amount, price, now=None, update=True ):
+    def buy( self, agent, amount, price=None, security=None, now=None, update=True ):
+        assert security, "Must specify security to buy on exchange"
         if security not in self.markets:
             self.markets[security] = self.market_class( '/'.join(( security, self.currency )), currency=self.currency )
-        self.markets[security].buy( agent, amount, price, now=now, update=update )
+        self.markets[security].buy( agent, amount, price=price, security=security, now=now, update=update )
 
-    def sell( self, security, agent, amount, price, now=None, update=True ):
+    def sell( self, agent, amount, price=None, security=None, now=None, update=True ):
+        assert security, "Must specify security to sell on exchange"
         if security not in self.markets:
             self.markets[security] = self.market_class( '/'.join(( security, self.currency )), currency=self.currency )
-        self.markets[security].buy( agent, amount, price, now=now, update=update )
+        self.markets[security].buy( agent, amount, price=price, security=security, now=now, update=update )
 
     def enter( self, order, update=True ):
         """Enter the trade in the appropriate market, creating one if necessary.  Use this API, if you don't

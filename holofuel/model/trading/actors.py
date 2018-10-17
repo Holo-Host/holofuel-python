@@ -88,11 +88,11 @@ class agent( object ):
     # exchange with themselves.
     # 
     def sells_to( self, another ):
-        """This actor will sell to another actor."""
+        """This agent will sell to another agent."""
         return another is not self
 
     def buys_from( self, another ):
-        """This actor will buy from another actor"""
+        """This agent will buy from another agent"""
         return another is not self
     
     @property
