@@ -47,7 +47,7 @@ class trade_t( collections.namedtuple(
     ] )):
     __slots__			= ()
     def __str__( self ):
-        return "{:<20s} {:4} {:9.4f} @ {}${}".format(
+        return "{:<20s} {:4} {:11g} @ {}${}".format(
             str( self.agent ), "buy" if self.amount > 0 else "sell",
             abs( self.amount ), self.currency,
             " <market>" if non_value( self.price ) else "{:9.4f}".format( self.price ))
@@ -110,12 +110,13 @@ class market( object ):
     self-trading.
 
     """
-    def __init__( self, name, currency=None, now=None, **kwds ):
+    def __init__( self, name, currency=None, now=None, rescan=None, **kwds ):
         super( market, self ).__init__( **kwds ) # Multiple Inheritance support
         # Get the base Security name from eg. 'Security/USD'
         self.name 		= name.split( '/', 1 )[0] if '/' in name else name
         self.currency		= currency or ( name.split( '/', 1 )[1] if '/' in name else 'USD' )
         self.now 		= now if now is not None else timer()
+        self.rescan		= rescan	# None: after exhausting trades; False: Never, True: Always
         self.buying 		= []
         self.selling 		= []
         self.last		= None
@@ -281,8 +282,13 @@ class market( object ):
         """Step bid down and ask upward, 'til we exhaust the order book, or run out of willing participants.
         This is useful in cases where not all market participants can/will deal with each-other.
 
-        Each time we execute one trade, break out and re-walk the order book, since the book may
-        have been changed.
+        Each time we execute one trade, we can break out and re-walk the order book, since the book
+        may have been changed (if self.rescan is True).  Otherwise, if it's None, we'll re-scan
+        after exhausting all available trades.  If its False, we won't re-scan; we'll carry on
+        forward looking for any more available trades.  If the program can enter new trades in the order
+        book during trade execution, then rescan should be at least None, and maybe True if the newly
+        entered trades can change the resolution order (ie. previously checked parties might now be
+        able to execute), and you want that respected even during trade execution: then use True.
 
             order book:                       holdings:
             buy    # $    | sell   # $        who #   @ $
@@ -313,9 +319,9 @@ class market( object ):
                                               B   100 @ 1.38  100 @ 1.43
                                               C   200 @ 1.43
 
-        After each trade, the order book has changed (the user of this generator may be modifying
+        After each trade, the order book has changed; the user of this generator may be modifying
         the participants in the order book, in addition to the changes in the existing orders due to
-        each buy/sell processed!)
+        each buy/sell processed!
 
         Therefore, after each order, collect the bidder/asker agents that could possibly trade, and
         evaluate any new participants against all other potential traders.  If any buyers or sellers
@@ -323,27 +329,63 @@ class market( object ):
         potentially in play!
 
         """
-        done				= False
+        logging.info( "execute Orders: \n%s", self.format_book() )
+        if now is None:
+            now			= timer()
+        done			= False
+        bidstp,askstp		= bid,ask	# May never rescan; start seeking downward from here
         while ( not done and self.trade_possible( bid=bid, ask=ask )): 	# while there are still orders potentially possible
-            done			= True
-            # Seek down the order book looking for the first compatible trading partners
-            bidnow,asknow		= bid,ask
-            while self.trade_possible( bid=bidnow, ask=asknow ) \
-                  and not self.agents_compatible( buyer=self.buying[bidnow].agent, seller=self.selling[asknow].agent ):
-                bidnow,asknow		= (bidnow-1,asknow) if bidnow + asknow == 0 else (bidnow,asknow+1)
-            # Could be no trades possible between consenting parties...  Yield one order, then
-            # re-check, because the order book may be altered between each order!  If no trades
-            # executed, outer loop will cease.
-            for trade in self.execute_possible( now, bid=bidnow, ask=asknow ):
+            done		= True
+            # Step down the order book, then scan down each book looking for compatible trading partners
+            if self.rescan is not False: 	# Avoid re-scanning if we *never* want to
+                bidstp,askstp	= bid,ask
+            bidrun,askrun	= bidstp,askstp # Run might be compatible right here...
+            while self.trade_possible( bid=bidstp, ask=askstp ) \
+                  and not self.agents_compatible( buyer=self.buying[bidstp].agent, seller=self.selling[askstp].agent ):
+                # Trades possible, but agents not (yet) compatible; run down each book, buyers
+                # first, breaking out to execute possible trade(s) when compatible buyers found.
+                compatible	= False
+                bidrun,askrun	= bidstp-1,askstp
+                while not compatible and self.trade_possible( bid=bidrun, ask=askrun ):
+                    compatible	= self.agents_compatible( buyer=self.buying[bidrun].agent, seller=self.selling[askrun].agent )
+                    if compatible:
+                        break
+                    bidrun     -= 1
+                if compatible:
+                    break			# Successful; found a compatible buyer for step seller
+                bidrun,askrun	= bidstp,askstp+1
+                while not compatible and self.trade_possible( bid=bidrun, ask=askrun ):
+                    compatible	= self.agents_compatible( buyer=self.buying[bidrun].agent, seller=self.selling[askrun].agent )
+                    if compatible:
+                        break
+                    askrun     += 1
+                if compatible:
+                    break			# Successful; found a compatible seller for step buyer
+                
+                # No compatible parties found running down from bidstp,askstp in either book; step
+                # forward alternating between bid/ask books, starting a new run
+                bidstp,askstp	= (bidstp-1,askstp) if bidstp + askstp == 0 else (bidstp,askstp+1)
+                bidrun,askrun	= bidstp,askstp	# Again, run might be compatible right here...
+
+            # At bidrun,askrun, could be trades possible between consenting parties...  Yield one
+            # order, then re-check, because the order book may be altered between each order!  If no
+            # trades executed, outer loop will cease.
+            for trade in self.execute_possible( now, bid=bidrun, ask=askrun ):
                 yield trade
-                done			= False
-                break
+                done		= False
+                if self.rescan is True:
+                    break
 
 
     def execute_possible( self, now=None, bid=-1, ask=0 ):
         """Yield all possible (buyer,seller) trading transactions, at the given bid/ask indices, and
         adjust books.  Not thread-safe.  Performs market-price orders first, sorted by age.  Then,
         limit-price orders.  Remember that all amounts in the selling book are -'ve!
+
+        If there are rules limiting agent trade activity (eg. no self-trading), then this may
+        deadlock the order flow!  It is necessary to "step" through each of the buy/sell order
+        books, seeking the first compatible seller for each buyer, then the first compatible buyer
+        with each seller, til the possible trades are exhausted.
         
         The caller must record the trades with each trade's agent, as appropriate.  Normally, this
         would be something like (assuming 'mkt' is a market object, and the trade.agent supplied has
@@ -370,7 +412,8 @@ class market( object ):
         """
         if now is None:
             now			= timer()
-        while self.trade_possible( bid=bid, ask=ask ):
+        while self.trade_possible( bid=bid, ask=ask ) \
+              and self.agents_compatible( buyer=self.buying[bid].agent, seller=self.selling[ask].agent ):
             # Trades available, and lowest seller at or below greatest buyer (or one or both is None
             # or NaN, meaning market price).  If both buyer and seller are trading with market-price
             # orders, then the oldest order gets the advantage; market buyers pay highest available

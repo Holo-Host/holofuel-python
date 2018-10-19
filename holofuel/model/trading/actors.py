@@ -58,6 +58,8 @@ class agent( object ):
     random fraction of the desired quanta (so agents with identical target
     quanta start at a random point during the first quanta).
 
+    If 'now' is None, will default to compute initial now on first 'run(...)'.
+
     """
     def __init__( self, identity=None, assets=None, currency=None, now=None,
                   start=None, quanta=None, **kwds ):
@@ -69,12 +71,12 @@ class agent( object ):
         self.balances		= {}   			# { 'USD': 1000, 'CAD': -1.23 }
         if assets:
             self.assets.update( assets )
-        self.now		= None			# We have not executed previously
+        self.now		= now			# if now is None, will compute initial time on first run()
         self.dt			= 0
         if quanta is None:
             quanta		= 0
-        if start is None:
-            start		= quanta * random.random()
+        if start is None:				# if now is None, first run() will compute
+            start		= ( now or 0 ) + quanta * random.random()
         self.start		= start
         self.quanta		= quanta
 
@@ -89,10 +91,12 @@ class agent( object ):
     # 
     def sells_to( self, another ):
         """This agent will sell to another agent."""
+        logging.debug( "%s sells to  %s: %s", self, another, another is not self )
         return another is not self
 
     def buys_from( self, another ):
         """This agent will buy from another agent"""
+        logging.debug( "%s buys from %s: %s", self, another, another is not self )
         return another is not self
     
     @property
@@ -113,16 +117,36 @@ class agent( object ):
 
     def run( self, exch, now=None ):
         """When start/quanta times are satisfied, compute the time quanta 'dt' since last execution, update
-        current 'now', and return True, indicating that agent should execute its behavior.
+        current 'now', and return True, indicating that agent should execute its behaviour.
+
+        By default, with no initial 'now' specified in constructor, behaviour will only execute
+        after 
 
         """
         if now is None:
             now			= timer()
-        if now >= self.start:
-            if self.now is None or now - self.now >= self.quanta:	# Ignores self.quanta on first execution
+        if self.now is None:
+            # First run, and no baseline time scale was selected; correct self.now/start.  This
+            # allows us to auto-calibrate to whatever base timescale is used by whatever system runs
+            # a simulation; eg. either zero-based times, or wall-clock timestamps.
+            self.now		= now
+            self.start	       += now
+
+        # On our starting run-up to our self.start time, we ignore self.quanta; as soon as we
+        # meet/pass our self.start time, we execute.  Otherwise, we only execute after each
+        # subsequent self.quanta has been met.
+        if now - self.start >= self.quanta:		# we're at least 1 quanta past our initial start
+            if now - self.now >= self.quanta:		#  and we've achieved our next quanta;
                 self.now	= now
-                self.dt		= now - ( self.start if self.now is None else self.now )
+                self.dt		= now - self.now
                 return True
+            # Beyond initial quanta, but not yet achieved next quanto...
+        elif now >= self.start: 			# or, we've met our initial start time
+            if self.now <= self.start:			#  and we haven't yet executed at start
+                self.now	= now
+                self.dt		= now - self.start
+                return True
+            # Beyond self.start, but already performed initial execution
         return False
 
     def record( self, order, comment=None ):
@@ -134,7 +158,7 @@ class agent( object ):
         self.trades.append( order )
         if self.currency is None:
             self.currency	= order.currency
-        logging.info( "%-20s %-5s %6d %10s @ %3s$%9.4f%s" % (
+        logging.info( "%-20s %-5s %11g %10s @ %3s$%9.4f%s" % (
                 self, "sells" if order.amount < 0 else "buys",
                 abs( order.amount ), order.security, order.currency, order.price,
                 ": " + comment if comment else ""))

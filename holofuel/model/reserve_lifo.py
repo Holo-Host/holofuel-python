@@ -232,8 +232,11 @@ class reserve( trading.market, trading.agent ):
         for timestamp in sorted( self.reserves.keys(), reverse=True ):
             for price in sorted( self.reserves[timestamp].keys() ):
                 amount		= self.reserves[timestamp][price]
-                # Place orders at original tranche timestamp? Tranches w/ same price will be retired
-                # oldest to newest.
+                # Place orders at original tranche timestamp?
+                # TODO: we can only handle redeeming at exactly the original sale price (or RuntimeError below);
+                # we must therefore always give the "spread" on a trade to the counterparty; for limit orders
+                # it goes to the oldest (most risk) trade.  So, we must always be the "newest" trade, or we'll
+                # get the seller's ask, which may be lower than our bid...
                 self.buy( self, amount=amount, price=price, now=timestamp )
                 logging.info( "Issuing reserve tranche from time %16s: %5d %-20s @ %7.4f", timestamp, amount, self.name, price )
             if self.LIFO:
@@ -266,8 +269,9 @@ class reserve( trading.market, trading.agent ):
                     if not tranche:
                         self.reserves.pop( timestamp )
                 return
+
         # No matching tranche?  Not cool
-        raise runtimeError( "%s has no reserves tranche matching order price %s: %r", self, order.price, self.reserves )
+        raise RuntimeError( "%s has no reserves tranche matching order price %s: %r" % ( self, order.price, self.reserves ))
 
     def print_full_book( self, width=40 ):
         """Print buy/sell order book w/ incl. depth chart."""

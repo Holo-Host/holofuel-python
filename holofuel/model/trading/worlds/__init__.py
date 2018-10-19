@@ -53,7 +53,6 @@ class world( object ):
 
     def periods( self ):
         """Generate the sequence of time quanta 'til done, beginning with the start timestamp."""
-        print( "Simulating {}".format( str( self )))
         while not self.done:
             yield self.now
             self.advance()
