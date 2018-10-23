@@ -5,11 +5,13 @@
 
 * Holo Fuel Python Modules
 
-  To support interaction with Holo Fuel from within Python, code the =holofuel= module is provided.
+  To support interaction with Holo Fuel from within Python, the =holofuel= module is provided.
 
   #+BEGIN_SRC python
-  >>> import holofuel as hf
-  >>> ... 
+  >>> from holofuel.api import holofuel_restful as hf
+  >>> hf1 = hf( 'localhost:3141' ) # the default
+  >>> hf1.getLedgerState()
+  { "balance": { "display": "0", "system": "0x0" ...
   #+END_SRC
 
 * Holo Fuel Modelling
