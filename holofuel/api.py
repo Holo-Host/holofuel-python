@@ -45,7 +45,7 @@ class restful( object ):
         url			= self.url( *args )
         r			= requests.post( url, **kwds )
         assert r.status_code == 200, \
-            "Failed w/ HTTP code {} for URL: {} w/ data {!r}".format( r.status_code, url, data )
+            "Failed w/ HTTP code {} for URL: {} w/ payload {!r}".format( r.status_code, url, kwds )
         return r
 
 
