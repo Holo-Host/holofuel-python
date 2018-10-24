@@ -26,15 +26,34 @@ import json
 
 class restful( object ):
     """Access Holochain dApp via REST API."""
-    def __init__( self, url=None, prefix=None ):
-        self.url		= [ url or 'http://localhost:3141' ]
-        self.prefix		= [ 'fn', 'transaction' ]
+    def __init__( self, *args ): # eg. 'http://localhost:3141', 'fn', 'transaction'
+        self.base		= list( args ) or [ 'http://localhost:3141', 'fn', 'transaction' ]
+
+    def url( self, *args ):
+        """Pass the term(s) of the URL; eg. url( 'v1', 'some', 'endpoint' )  """
+        return '/'.join( self.base + list( args ))
+
+    def post( self, *args, **kwds ):
+        """Post a request to the API endpoint specified in *args", with the request data/json in keywords
+        (passed to requests.post, unmodified).  Raw POST data (eg. string) in the data=...,
+        json=... will be encoded to a JSON string for POST.
+
+        For example:
+            self.post( 'endpoint', json={ "a": 1 } )
+
+        """
+        url			= self.url( *args )
+        r			= requests.post( url, **kwds )
+        assert r.status_code == 200, \
+            "Failed w/ HTTP code {} for URL: {} w/ data {!r}".format( r.status_code, url, data )
+        return r
 
 
 class holofuel_restful( restful ):
+
+    def setLimits( self, data ):
+        """The setLimits API expects JSON data, and returns response encoded as JSON"""
+        return self.post( 'setLimits', json=data ).json()
+
     def getLedgerState( self ):
-        url			= '/'.join( self.url + self.prefix + [ 'getLedgerState' ] )
-        r			= requests.get( url )
-        assert r.status_code == 200, \
-            "Failed w/ HTTP code {} for URL: {}".format( r.status_code, url )
-        return json.loads( r.text )
+        return self.post( 'getLedgerState' ).json()
