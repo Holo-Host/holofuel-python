@@ -45,7 +45,7 @@ class restful( object ):
         url			= self.url( *args )
         r			= requests.post( url, **kwds )
         assert r.status_code == 200, \
-            "Failed w/ HTTP code {} for URL: {} w/ payload {!r}".format( r.status_code, url, kwds )
+            "Failed w/ HTTP code {} for URL: {} w/ payload {!r}:\n{}".format( r.status_code, url, kwds, r.text )
         return r
 
 
@@ -61,8 +61,8 @@ class holofuel_restful( restful ):
     def getSystemInfo( self ):
         return self.post( 'getSystemInfo' ).json()
 
-    def symmSpenderProposeFastPath( self, transaction ):
-        return self.post( 'setLimits', json=transaction ).json()
+    def txSymmSpenderProposeFastPath( self, transaction ):
+        return self.post( 'txSymmSpenderProposeFastPath', json=transaction ).json()
 
     def txListPending( self):
         return self.post( 'txListPending' ).json()
