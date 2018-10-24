@@ -57,3 +57,9 @@ class holofuel_restful( restful ):
 
     def getLedgerState( self ):
         return self.post( 'getLedgerState' ).json()
+
+    def getSystemInfo( self ):
+        return self.post( 'getSystemInfo' ).json()
+
+    def symmSpenderProposeFastPath( self, transaction ):
+        return self.post( 'setLimits', json=transaction ).json()
