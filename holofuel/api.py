@@ -63,3 +63,9 @@ class holofuel_restful( restful ):
 
     def symmSpenderProposeFastPath( self, transaction ):
         return self.post( 'setLimits', json=transaction ).json()
+
+    def txListPending( self):
+        return self.post( 'txListPending' ).json()
+
+    def txList( self):
+        return self.post( 'txList' ).json()
