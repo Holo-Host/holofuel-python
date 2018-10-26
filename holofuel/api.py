@@ -64,8 +64,16 @@ class holofuel_restful( restful ):
     def txSymmSpenderProposeFastPath( self, transaction ):
         return self.post( 'txSymmSpenderProposeFastPath', json=transaction ).json()
 
-    def txListPending( self):
+    def txListPending( self ):
         return self.post( 'txListPending' ).json()
 
-    def txList( self):
+    def txList( self ):
         return self.post( 'txList' ).json()
+
+    def listPreauths( self ):
+        return self.post( 'listPreauths' ).json()
+
+    def txRecipientPreauth( self, data ):
+        return self.post( 'txRecipientPreauth', json=data ).json()
+
+    
