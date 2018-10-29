@@ -23,11 +23,19 @@ __license__                     = "GPLv3+"
 
 import requests
 import json
+import logging
 
 class restful( object ):
-    """Access Holochain dApp via REST API."""
+    """Access Holochain dApp via REST API.  The URL will default to localhost:3141 if not provided,
+    and .../fn/transactions will be the default API path if no *args provided.
+
+    """
     def __init__( self, *args ): # eg. 'http://localhost:3141', 'fn', 'transaction'
-        self.base		= list( args ) or [ 'http://localhost:3141', 'fn', 'transaction' ]
+        self.base		= list( args[:1] ) or [ 'http://localhost:3141' ]
+        self.base	       += list( args[1:] ) or [ 'fn', 'transaction' ]
+
+    def __repr__( self ):
+        return "<Holochain dApp at %s>" % ( '/'.join( self.base ))
 
     def url( self, *args ):
         """Pass the term(s) of the URL; eg. url( 'v1', 'some', 'endpoint' )  """
@@ -50,7 +58,6 @@ class restful( object ):
 
 
 class holofuel_restful( restful ):
-
     def setLimits( self, data ):
         """The setLimits API expects JSON data, and returns response encoded as JSON"""
         return self.post( 'setLimits', json=data ).json()
