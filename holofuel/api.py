@@ -83,4 +83,7 @@ class holofuel_restful( restful ):
     def txRecipientPreauth( self, data ):
         return self.post( 'txRecipientPreauth', json=data ).json()
 
+    def txSpenderPreauth( self, data ):
+        return self.post( 'txSpenderPreauth', json=data ).json()
+
     
